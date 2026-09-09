@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateEntry, evaluateExit, evaluateMoneyExit } from "@/server/auto-trading/decision";
+import { evaluateEntry, evaluateExit, evaluateMoneyExit, shouldApplyMoneyCap } from "@/server/auto-trading/decision";
 
 const CONFIG = { minConfluenceScore: 40, minScalpingConfidence: 40 };
 const scalping = (overrides: Partial<{ direction: string; gated: boolean; confidence: number }> = {}) => ({ direction: "LONG", gated: false, confidence: 55, ...overrides });
@@ -81,5 +81,19 @@ describe("evaluateMoneyExit", () => {
     expect(evaluateMoneyExit(5, 0, 0)).toBeNull();
     expect(evaluateMoneyExit(-5, 0, 0)).toBeNull();
     expect(evaluateMoneyExit(5, 0, 0.5)).toBeNull();
+  });
+});
+
+describe("shouldApplyMoneyCap", () => {
+  it("applies for 5m and 15m", () => {
+    expect(shouldApplyMoneyCap("5m")).toBe(true);
+    expect(shouldApplyMoneyCap("15m")).toBe(true);
+  });
+
+  it("does not apply for other timeframes", () => {
+    expect(shouldApplyMoneyCap("1m")).toBe(false);
+    expect(shouldApplyMoneyCap("30m")).toBe(false);
+    expect(shouldApplyMoneyCap("1h")).toBe(false);
+    expect(shouldApplyMoneyCap("4h")).toBe(false);
   });
 });

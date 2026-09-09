@@ -122,6 +122,14 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
     }
   }
 
+  const scalpingCapNote = (() => {
+    const capsEnabled = (data?.config?.targetProfitUsd ?? 0) > 0 || (data?.config?.maxLossUsd ?? 0) > 0;
+    const tf = data?.config?.timeframe ?? "";
+    if (!capsEnabled) return `OFF (pakai TP/SL broker)`;
+    if (tf !== "5m" && tf !== "15m") return `OFF untuk TF ${tf} (hanya aktif 5m & 15m)`;
+    return `ON: profit cap $${(data?.config?.targetProfitUsd ?? 0).toFixed(2)} / loss cap $${(data?.config?.maxLossUsd ?? 0).toFixed(2)}`;
+  })();
+
   return (
     <Card>
       <div className="flex items-center justify-between text-sm">
@@ -288,6 +296,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
           </select>
         </div>
       </div>
+      <div className="mt-1 text-[10px] text-slate-600">Cap uang (Max Profit/Loss) hanya aktif untuk TF 5m &amp; 15m. Isi 0 = pakai TP/SL broker.</div>
 
       {data?.account?.accountType ? (
         <div
@@ -366,10 +375,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         {!data?.logs?.length ? <div className="text-slate-600">Belum ada log. {isLoading ? "Menyambung..." : "Loop: " + (data?.loop?.running ? "aktif" : "mati")}</div> : null}
       </div>
       <div className="mt-2 text-[11px] text-slate-600">
-        Loop interval {(data?.config?.loopIntervalMs ?? 15000) / 1000}s · SL dari ATR × {(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} · TP {(data?.config?.tpRiskReward ?? 5).toFixed(0)}× risiko · trade {(data?.config?.tradeMode ?? "single").toUpperCase()} · max {data?.config?.maxOpenPositions ?? 1} posisi
-        {(data?.config?.targetProfitUsd ?? 0) > 0 || (data?.config?.maxLossUsd ?? 0) > 0
-          ? ` · scalping tipis: profit cap $${(data?.config?.targetProfitUsd ?? 0).toFixed(2)} / loss cap $${(data?.config?.maxLossUsd ?? 0).toFixed(2)}`
-          : ` · scalping tipis: OFF (pakai TP/SL broker)`}.
+        Loop interval {(data?.config?.loopIntervalMs ?? 15000) / 1000}s · SL dari ATR × {(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} · TP {(data?.config?.tpRiskReward ?? 5).toFixed(0)}× risiko · trade {(data?.config?.tradeMode ?? "single").toUpperCase()} · max {data?.config?.maxOpenPositions ?? 1} posisi · scalping tipis: {scalpingCapNote}.
       </div>
     </Card>
   );

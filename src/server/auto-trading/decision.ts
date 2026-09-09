@@ -31,6 +31,12 @@ export function evaluateExit(position: { action: "BUY" | "SELL"; stopLoss: numbe
   return null;
 }
 
+export const SCALPING_CAP_TIMEFRAMES = ["5m", "15m"] as const;
+
+export function shouldApplyMoneyCap(timeframe: string): boolean {
+  return SCALPING_CAP_TIMEFRAMES.includes(timeframe as (typeof SCALPING_CAP_TIMEFRAMES)[number]);
+}
+
 export type MoneyExit = {
   reason: "TP" | "SL";
   target: number;

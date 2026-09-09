@@ -6,7 +6,7 @@ import { getSpreadContext } from "@/server/market-data/symbol-context";
 import type { Timeframe } from "@/lib/timeframes";
 import { addTrackedPosition, appendAutoTradeLog, flushPendingAutoTradeState, getTrackedPositions, loadAutoTradeState, recordAutoTrade, removeTrackedPosition, roundTo, saveAutoTradeState, syncAutoTradeStateFromDb } from "./state";
 import { computeRiskLevels, resolveDirection, sizeFixedLot, sizeVolume, type SymbolSizingInfo } from "./risk";
-import { evaluateEntry, evaluateExit, evaluateMoneyExit } from "./decision";
+import { evaluateEntry, evaluateExit, evaluateMoneyExit, shouldApplyMoneyCap } from "./decision";
 import { entryMinimums } from "@/server/technical/strictness";
 import { DEFAULT_MARKET_UNIVERSE } from "@/server/market-data/universe";
 import { AUTO_MAGIC, type AutoTradeClosedTrade, type AutoTradeMode, type AutoTradePosition, type AutoTradeState } from "./types";
@@ -154,7 +154,9 @@ async function manageTrackedPositions(state: AutoTradeState, bridge: string): Pr
     position.stopLoss = toFinite(live.sl) ?? position.stopLoss;
     position.takeProfit = toFinite(live.tp) ?? position.takeProfit;
     const unrealized = computeRealizedPnl(position.action, position.entryPrice, position.lastPrice ?? position.entryPrice, position.volume, position.contractSize);
-    const moneyExit = evaluateMoneyExit(unrealized, state.config.targetProfitUsd, state.config.maxLossUsd);
+    const moneyExit = shouldApplyMoneyCap(position.timeframe)
+      ? evaluateMoneyExit(unrealized, state.config.targetProfitUsd, state.config.maxLossUsd)
+      : null;
     if (moneyExit) {
       const closed = await closeMoneyExit(state, bridge, position, moneyExit);
       if (closed) {
