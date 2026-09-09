@@ -130,6 +130,9 @@ async function buildStatusBody(state = loadAutoTradeState()) {
   const useLiveEquity = mode === "demo" || mode === "real";
   const balance = useLiveEquity ? (account?.balance ?? state.paper.balance) : state.paper.balance;
   const equity = useLiveEquity ? (account?.equity ?? state.paper.equity) : state.paper.equity;
+  const closedTrades = state.trades.filter((trade) => trade.mode === mode);
+  const closedWins = closedTrades.filter((trade) => trade.realizedPnl > 0).length;
+  const closedPnl = closedTrades.reduce((sum, trade) => sum + trade.realizedPnl, 0);
   return {
     enabled: state.enabled,
     status: state.status,
@@ -140,10 +143,10 @@ async function buildStatusBody(state = loadAutoTradeState()) {
     account,
     accountConflict,
     stats: {
-      trades: state.paper.trades,
-      wins: state.paper.wins,
-      winRate: state.paper.trades ? (state.paper.wins / state.paper.trades) * 100 : 0,
-      realizedPnl: state.paper.realizedPnl,
+      trades: closedTrades.length,
+      wins: closedWins,
+      winRate: closedTrades.length ? (closedWins / closedTrades.length) * 100 : 0,
+      realizedPnl: Math.round(closedPnl * 100) / 100,
       balance,
       equity,
     },

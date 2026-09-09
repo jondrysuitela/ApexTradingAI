@@ -45,7 +45,7 @@ type PositionsResponse = {
 };
 
 export function LivePositionsPanel({ symbol }: { symbol: string }) {
-  const { data, mutate } = useSWR<PositionsResponse>(`/api/market-data/positions?symbol=${encodeURIComponent(symbol)}`, fetcher, {
+  const { data, mutate } = useSWR<PositionsResponse>("/api/market-data/positions", fetcher, {
     refreshInterval: 3000,
   });
   const [closingTicket, setClosingTicket] = useState<number | null>(null);
@@ -132,6 +132,7 @@ export function LivePositionsPanel({ symbol }: { symbol: string }) {
     <Card>
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="uppercase tracking-[0.3em] text-slate-400">Open Positions</span>
+        <span className="text-xs text-slate-600">market: {symbol}</span>
         <div className="flex items-center gap-2">
           <span className={`font-mono ${totalProfit > 0 ? "text-emerald-400" : totalProfit < 0 ? "text-red-400" : "text-slate-400"}`}>
             P/L {totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)}
@@ -177,6 +178,9 @@ export function LivePositionsPanel({ symbol }: { symbol: string }) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className={`rounded px-2 py-0.5 font-mono text-xs font-bold ${position.typeLabel === "BUY" ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>{position.typeLabel}</span>
+                  <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${position.magic === 424242 ? "bg-cyan-500/15 text-cyan-300" : "bg-slate-500/20 text-slate-400"}`}>
+                    {position.magic === 424242 ? "APP" : "EA/MANUAL"}
+                  </span>
                   <span className="font-mono text-sm text-slate-200">{position.symbol}</span>
                   <span className="font-mono text-xs text-slate-500">{position.volume}</span>
                 </div>
