@@ -1,11 +1,13 @@
 export type AutoTradeMode = "paper" | "demo" | "real";
 export type AutoTradeAction = "BUY" | "SELL";
+export type AutoTradeDirection = "AUTO" | "BUY" | "SELL";
 export type AutoTradeStatus = "disabled" | "enabled" | "position_open" | "error";
 
 export type AutoTradeConfig = {
   mode: AutoTradeMode;
   symbol: string;
   timeframe: string;
+  direction: AutoTradeDirection;
   riskPercent: number;
   slAtrMultiplier: number;
   tpRiskReward: number;
@@ -79,6 +81,7 @@ export const AUTO_TRADE_DEFAULTS: AutoTradeConfig = {
   mode: "paper",
   symbol: "XAUUSD",
   timeframe: "5m",
+  direction: "AUTO",
   riskPercent: 1,
   slAtrMultiplier: 0.75,
   tpRiskReward: 5,

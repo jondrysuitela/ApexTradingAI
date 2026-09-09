@@ -14,6 +14,7 @@ type AutoTradeStatus = {
     mode: "paper" | "demo" | "real";
     symbol: string;
     timeframe: string;
+    direction: "AUTO" | "BUY" | "SELL";
     riskPercent: number;
     slAtrMultiplier: number;
     tpRiskReward: number;
@@ -50,6 +51,14 @@ export function AutoTradeCard() {
   const position = data?.position ?? null;
   const stats = data?.stats ?? null;
   const sideColor = position?.action === "BUY" ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300" : "border-red-400/40 bg-red-500/20 text-red-300";
+
+  const symbols = [
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
+    "USDIDR", "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD", "SPX", "IXIC",
+  ];
+  const timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
+  const slSizes = [0.5, 0.75, 1, 1.5, 2, 3];
+  const targets = [2, 3, 5, 8, 12];
 
   const unrealized = useMemo(() => {
     if (!position || position.lastPrice === null) return null;
@@ -121,11 +130,72 @@ export function AutoTradeCard() {
             <option value="real" className="bg-slate-950">Real (uang asli)</option>
           </select>
         </div>
-        <Field label="Symbol" value={data?.config?.symbol ?? "XAUUSD"} />
-        <Field label="Timeframe" value={data?.config?.timeframe ?? "5m"} />
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Trade</div>
+          <select
+            value={data?.config?.direction ?? "AUTO"}
+            onChange={(event) => post({ action: "config", direction: event.target.value })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            <option value="AUTO" className="bg-slate-950">AUTO (sinyal)</option>
+            <option value="BUY" className="bg-slate-950">BUY (long saja)</option>
+            <option value="SELL" className="bg-slate-950">SELL (short saja)</option>
+          </select>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Pasar</div>
+          <select
+            value={data?.config?.symbol ?? "XAUUSD"}
+            onChange={(event) => post({ action: "config", symbol: event.target.value })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            {symbols.map((item) => (
+              <option key={item} value={item} className="bg-slate-950">{item}</option>
+            ))}
+          </select>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Timeframe</div>
+          <select
+            value={data?.config?.timeframe ?? "5m"}
+            onChange={(event) => post({ action: "config", timeframe: event.target.value })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            {timeframes.map((item) => (
+              <option key={item} value={item} className="bg-slate-950">{item}</option>
+            ))}
+          </select>
+        </div>
         <Field label="Risk / trade" value={`${data?.config?.riskPercent ?? 1}%`} />
-        <Field label="SL size" value={`${(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} ATR`} />
-        <Field label="Target" value={`${(data?.config?.tpRiskReward ?? 5).toFixed(0)}R`} />
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">SL size</div>
+          <select
+            value={data?.config?.slAtrMultiplier ?? 0.75}
+            onChange={(event) => post({ action: "config", slSize: event.target.value })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            {slSizes.map((item) => (
+              <option key={item} value={item} className="bg-slate-950">{item.toFixed(2)} ATR</option>
+            ))}
+          </select>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Target</div>
+          <select
+            value={data?.config?.tpRiskReward ?? 5}
+            onChange={(event) => post({ action: "config", target: event.target.value })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            {targets.map((item) => (
+              <option key={item} value={item} className="bg-slate-950">{item.toFixed(0)}R</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {data?.account?.accountType ? (
@@ -184,7 +254,7 @@ export function AutoTradeCard() {
           <Stat label="Trades" value={String(stats.trades)} />
           <Stat label="Win Rate" value={`${stats.winRate.toFixed(0)}%`} />
           <Stat label="Realized PnL" value={`$${stats.realizedPnl.toFixed(2)}`} accent />
-          <Stat label="Paper Equity" value={`$${stats.equity.toFixed(2)}`} />
+          <Stat label={(data?.config?.mode === "paper" ? "Paper Equity" : `${(data?.config?.mode ?? "paper").toUpperCase()} Equity`)} value={`$${stats.equity.toFixed(2)}`} />
         </div>
       ) : null}
 

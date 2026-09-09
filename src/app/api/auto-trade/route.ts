@@ -73,7 +73,8 @@ export async function POST(request: Request) {
 function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
   if (typeof body.mode === "string" && (body.mode === "paper" || body.mode === "demo" || body.mode === "real")) patch.mode = body.mode;
-  if (typeof body.symbol === "string" && /^[A-Za-z0-9_.-]+$/.test(body.symbol)) patch.symbol = body.symbol.toUpperCase();
+  if (typeof body.direction === "string" && (body.direction === "AUTO" || body.direction === "BUY" || body.direction === "SELL")) patch.direction = body.direction;
+  if (typeof body.symbol === "string" && /^[A-Za-z0-9_.=^-]+$/.test(body.symbol)) patch.symbol = body.symbol.toUpperCase();
   if (typeof body.timeframe === "string" && ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"].includes(body.timeframe)) patch.timeframe = body.timeframe;
   const numbers: Array<"riskPercent" | "slAtrMultiplier" | "tpRiskReward" | "minConfluenceScore" | "minScalpingConfidence" | "loopIntervalMs"> = [
     "riskPercent",
@@ -87,6 +88,8 @@ function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<strin
     const value = Number(body[key]);
     if (Number.isFinite(value) && value > 0) patch[key] = value;
   }
+  if (body.slSize != null && Number.isFinite(Number(body.slSize)) && Number(body.slSize) > 0) patch.slAtrMultiplier = Number(body.slSize);
+  if (body.target != null && Number.isFinite(Number(body.target)) && Number(body.target) > 0) patch.tpRiskReward = Number(body.target);
   Object.assign(config, patch);
 }
 
@@ -120,6 +123,9 @@ async function buildStatusBody(state = loadAutoTradeState()) {
   const mode = state.config.mode;
   const accountConflict =
     account?.accountType && (mode === "real" ? account.accountType !== "real" : account.accountType === "real");
+  const useLiveEquity = mode === "demo" || mode === "real";
+  const balance = useLiveEquity ? (account?.balance ?? state.paper.balance) : state.paper.balance;
+  const equity = useLiveEquity ? (account?.equity ?? state.paper.equity) : state.paper.equity;
   return {
     enabled: state.enabled,
     status: state.status,
@@ -133,8 +139,8 @@ async function buildStatusBody(state = loadAutoTradeState()) {
       wins: state.paper.wins,
       winRate: state.paper.trades ? (state.paper.wins / state.paper.trades) * 100 : 0,
       realizedPnl: state.paper.realizedPnl,
-      balance: state.paper.balance,
-      equity: state.paper.equity,
+      balance,
+      equity,
     },
     lastCycle: state.lastCycle,
     lastError: state.lastError,

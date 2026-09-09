@@ -199,6 +199,23 @@ async function evaluateAndOpen(state: AutoTradeState, bridge: string): Promise<{
   state.lastSkipReason = undefined;
 
   const direction = decision.direction as "LONG" | "SHORT";
+  if (cfg.direction === "BUY" && direction !== "LONG") {
+    const skipLog = `Arah dipaksa BUY, tapi sinyal ${direction} — skip.`;
+    if (state.lastSkipReason !== skipLog) {
+      state.lastSkipReason = skipLog;
+      appendAutoTradeLog(state, "info", skipLog);
+    }
+    return { message: skipLog };
+  }
+  if (cfg.direction === "SELL" && direction !== "SHORT") {
+    const skipLog = `Arah dipaksa SELL, tapi sinyal ${direction} — skip.`;
+    if (state.lastSkipReason !== skipLog) {
+      state.lastSkipReason = skipLog;
+      appendAutoTradeLog(state, "info", skipLog);
+    }
+    return { message: skipLog };
+  }
+
   const symbolQuote = await fetchSymbolQuote(bridge, cfg.symbol);
   const entry = resolveDirection(direction === "LONG" ? "BUY" : "SELL", symbolQuote.bid ?? undefined, symbolQuote.ask ?? undefined, candles.at(-1)?.close);
 
