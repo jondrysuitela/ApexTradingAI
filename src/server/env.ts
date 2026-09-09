@@ -5,6 +5,7 @@ const schema = z.object({
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  LOCAL_USER_ID: z.string().optional(),
   MARKET_DATA_PROVIDER: z.string().default("binance"),
   MARKET_DATA_BASE_URL: z.string().default("https://api.binance.com"),
   TWELVE_DATA_API_KEY: z.string().optional(),

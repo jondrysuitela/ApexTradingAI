@@ -4,7 +4,7 @@ import { analyzeMarket } from "@/server/market-data/analysis";
 import { getCandles, getTicker } from "@/server/market-data/service";
 import { getSpreadContext } from "@/server/market-data/symbol-context";
 import type { Timeframe } from "@/lib/timeframes";
-import { appendAutoTradeLog, loadAutoTradeState, recordAutoTrade, roundTo, saveAutoTradeState, setPosition } from "./state";
+import { appendAutoTradeLog, flushPendingAutoTradeState, loadAutoTradeState, recordAutoTrade, roundTo, saveAutoTradeState, setPosition, syncAutoTradeStateFromDb } from "./state";
 import { computeRiskLevels, resolveDirection, sizeVolume, type SymbolSizingInfo } from "./risk";
 import { evaluateEntry, evaluatePaperExit } from "./decision";
 import { entryMinimums } from "@/server/technical/strictness";
@@ -30,6 +30,7 @@ export async function runAutoTradeCycle(): Promise<{ cycled: boolean; message: s
 }
 
 async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
+  await syncAutoTradeStateFromDb();
   const state = loadAutoTradeState();
   if (!state.enabled) {
     return { cycled: false, message: "Auto-trade disabled." };
@@ -38,6 +39,7 @@ async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
   const bridge = env.MT5_BRIDGE_URL ?? "";
   if (!bridge) {
     markError(state, "MT5_BRIDGE_URL belum dikonfigurasi.");
+    void flushPendingAutoTradeState();
     return { cycled: false, message: "Bridge tidak dikonfigurasi." };
   }
 
@@ -53,6 +55,7 @@ async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
           : `Posisi ${state.position.action} dipantau (last ${state.position.lastPrice?.toFixed(5) ?? "n/a"}).`,
       };
       saveAutoTradeState(state);
+      void flushPendingAutoTradeState();
       return { cycled: true, message: closed ? "Posisi auto-trade ditutup." : "Posisi masih terbuka — dipantau." };
     }
 
@@ -61,6 +64,7 @@ async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
     state.lastError = null;
     state.lastCycle = { at: new Date().toISOString(), message: opened.message };
     saveAutoTradeState(state);
+    void flushPendingAutoTradeState();
     return { cycled: true, message: opened.message };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
@@ -69,6 +73,7 @@ async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
     state.status = "error";
     state.lastError = message;
     saveAutoTradeState(state);
+    void flushPendingAutoTradeState();
     return { cycled: false, message };
   }
 }
@@ -373,6 +378,7 @@ export function computeRealizedPnl(action: "BUY" | "SELL", entry: number, exitPr
 }
 
 export async function forceCloseAutoTrade(): Promise<{ closed: boolean; message: string }> {
+  await syncAutoTradeStateFromDb();
   const state = loadAutoTradeState();
   if (!state.position) {
     return { closed: false, message: "Tidak ada posisi auto-trade untuk ditutup." };
@@ -389,6 +395,7 @@ export async function forceCloseAutoTrade(): Promise<{ closed: boolean; message:
     closeTrackedPosition(state, position, price, "MANUAL");
     state.lastCycle = { at: new Date().toISOString(), message: "Posisi paper ditutup manual." };
     saveAutoTradeState(state);
+    await flushPendingAutoTradeState();
     return { closed: true, message: `Paper ${position.action} ditutup manual @ ${price.toFixed(5)}.` };
   }
 
@@ -407,6 +414,7 @@ export async function forceCloseAutoTrade(): Promise<{ closed: boolean; message:
   closeTrackedPosition(state, position, price, "MANUAL");
   state.lastCycle = { at: new Date().toISOString(), message: "Posisi real ditutup manual." };
   saveAutoTradeState(state);
+  await flushPendingAutoTradeState();
   return { closed: true, message: `Real ${position.action} (${position.ticket}) ditutup @ ${price.toFixed(5)}.` };
 }
 

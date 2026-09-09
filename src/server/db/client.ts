@@ -11,7 +11,7 @@ export function getDbPool() {
     return null;
   }
 
-  pool ??= new Pool({ connectionString: env.DATABASE_URL });
+  pool ??= new Pool({ connectionString: env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   return pool;
 }
 
@@ -20,7 +20,7 @@ export function getDb() {
     return null;
   }
 
-  pool ??= new Pool({ connectionString: env.DATABASE_URL });
+  pool ??= new Pool({ connectionString: env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   dbClient ??= drizzle(pool, { schema });
   return dbClient;
 }

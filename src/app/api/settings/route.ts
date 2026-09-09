@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/server/auth/session";
+import { getCurrentUserId } from "@/server/auth/session";
 import { handleApiError } from "@/server/errors";
 import { getUserPreferences, saveUserPreferences } from "@/server/settings/repository";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    return NextResponse.json({ preferences: await getUserPreferences(user?.id) });
+    const userId = await getCurrentUserId();
+    return NextResponse.json({ preferences: await getUserPreferences(userId ?? undefined) });
   } catch (error) {
     return handleApiError(error);
   }
@@ -14,8 +14,8 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
+    const userId = await getCurrentUserId();
+    if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       openPositionsLimit: body.openPositionsLimit,
     };
 
-    return NextResponse.json({ preferences: await saveUserPreferences(user.id, preferences) });
+    return NextResponse.json({ preferences: await saveUserPreferences(userId, preferences) });
   } catch (error) {
     return handleApiError(error);
   }

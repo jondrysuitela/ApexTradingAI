@@ -1,4 +1,4 @@
-import { boolean, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, index } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, index } from "drizzle-orm/pg-core";
 
 export const marketStatusEnum = pgEnum("market_status", ["LIVE", "DELAYED", "STALE", "OFFLINE"]);
 
@@ -231,4 +231,10 @@ export const systemEvents = pgTable("system_events", {
   message: text("message").notNull(),
   metadata: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const autoTradeState = pgTable("auto_trade_state", {
+  id: integer("id").primaryKey(),
+  data: jsonb("data").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

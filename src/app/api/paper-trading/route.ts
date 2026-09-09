@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AppError } from "@/server/errors";
-import { getCurrentUser } from "@/server/auth/session";
+import { getCurrentUserId } from "@/server/auth/session";
 import { getDb } from "@/server/db/client";
 import {
   createPaperOrder,
@@ -11,18 +11,18 @@ import {
 } from "@/server/paper-trading/repository";
 
 export async function GET() {
-  const user = await getCurrentUser();
-  if (!user) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  const snapshot = await getPaperTradingSnapshot(user.id);
+  const snapshot = await getPaperTradingSnapshot(userId);
   return NextResponse.json({ snapshot });
 }
 
 export async function POST(request: Request) {
-  const user = await getCurrentUser();
-  if (!user) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
   if (!getDb()) {
@@ -35,17 +35,17 @@ export async function POST(request: Request) {
     const action = String(body.action ?? "create-order");
 
     if (action === "ensure-account") {
-      const account = await ensurePaperAccount(user.id);
+      const account = await ensurePaperAccount(userId);
       return NextResponse.json({ account });
     }
 
     if (action === "process-orders") {
-      const result = await processPaperOrders(user.id);
+      const result = await processPaperOrders(userId);
       return NextResponse.json(result);
     }
 
     if (action === "refresh-marks") {
-      const result = await refreshPaperPositionMarks(user.id);
+      const result = await refreshPaperPositionMarks(userId);
       return NextResponse.json(result);
     }
 
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "quantity must be a positive number" }, { status: 400 });
     }
 
-    const order = await createPaperOrder(user.id, {
+    const order = await createPaperOrder(userId, {
       symbol: String(body.symbol ?? "XAUUSD"),
       side,
       orderType,

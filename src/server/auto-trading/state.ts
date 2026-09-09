@@ -1,14 +1,96 @@
 import fs from "node:fs";
 import path from "node:path";
+import { eq } from "drizzle-orm";
+import { getDb } from "@/server/db/client";
+import { autoTradeState as autoTradeStateTable } from "@/server/db/schema";
 import { AUTO_TRADE_DEFAULTS, type AutoTradeClosedTrade, type AutoTradeConfig, type AutoTradeLog, type AutoTradePosition, type AutoTradeState } from "./types";
 
 const STATE_DIR = path.join(process.cwd(), "data", "auto-trade");
 const STATE_FILE = path.join(STATE_DIR, "state.json");
 
+const SINGLETON_ID = 1;
 const MAX_LOGS = 80;
 const MAX_TRADES = 50;
+const FLUSH_DELAY_MS = 800;
+
+let cache: AutoTradeState | null = null;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let persistenceError: string | null = null;
 
 export function loadAutoTradeState(): AutoTradeState {
+  if (!cache) {
+    cache = loadFromDisk();
+  }
+  return cache;
+}
+
+export async function syncAutoTradeStateFromDb(): Promise<void> {
+  const db = getDb();
+  if (!db) {
+    if (!cache) cache = loadFromDisk();
+    return;
+  }
+
+  try {
+    const rows = await db.select().from(autoTradeStateTable).where(eq(autoTradeStateTable.id, SINGLETON_ID)).limit(1);
+    if (rows[0]?.data) {
+      cache = normalizeState(rows[0].data as Partial<AutoTradeState>);
+      writeFile(cache);
+    } else if (!cache) {
+      cache = loadFromDisk();
+    }
+    persistenceError = null;
+  } catch (error) {
+    persistenceError = dbErrorMessage(error);
+    if (!cache) cache = loadFromDisk();
+  }
+}
+
+export function saveAutoTradeState(state: AutoTradeState) {
+  cache = state;
+  writeFile(state);
+  scheduleFlush();
+}
+
+export async function flushPendingAutoTradeState(): Promise<void> {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  await flushToDb();
+}
+
+export function getAutoTradePersistenceError(): string | null {
+  return persistenceError;
+}
+
+function scheduleFlush() {
+  if (flushTimer) clearTimeout(flushTimer);
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    void flushToDb();
+  }, FLUSH_DELAY_MS);
+}
+
+async function flushToDb(): Promise<void> {
+  const db = getDb();
+  if (!db || !cache) return;
+
+  try {
+    await db
+      .insert(autoTradeStateTable)
+      .values({ id: SINGLETON_ID, data: cache as unknown as Record<string, unknown>, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: autoTradeStateTable.id,
+        set: { data: cache as unknown as Record<string, unknown>, updatedAt: new Date() },
+      });
+    persistenceError = null;
+  } catch (error) {
+    persistenceError = dbErrorMessage(error);
+  }
+}
+
+function loadFromDisk(): AutoTradeState {
   const fallback = freshState();
   if (!fs.existsSync(STATE_FILE)) {
     return fallback;
@@ -16,23 +98,36 @@ export function loadAutoTradeState(): AutoTradeState {
 
   try {
     const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as Partial<AutoTradeState>;
-    return {
-      ...fallback,
-      ...raw,
-      config: { ...AUTO_TRADE_DEFAULTS, ...(raw.config ?? {}) },
-      paper: { ...fallback.paper, ...(raw.paper ?? {}) },
-      position: raw.position ?? null,
-      logs: Array.isArray(raw.logs) ? raw.logs : [],
-      trades: Array.isArray(raw.trades) ? raw.trades : [],
-    };
+    return normalizeState(raw);
   } catch {
     return fallback;
   }
 }
 
-export function saveAutoTradeState(state: AutoTradeState) {
-  fs.mkdirSync(STATE_DIR, { recursive: true });
-  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+function normalizeState(raw: Partial<AutoTradeState>): AutoTradeState {
+  const fallback = freshState();
+  return {
+    ...fallback,
+    ...raw,
+    config: { ...AUTO_TRADE_DEFAULTS, ...(raw.config ?? {}) },
+    paper: { ...fallback.paper, ...(raw.paper ?? {}) },
+    position: raw.position ?? null,
+    logs: Array.isArray(raw.logs) ? raw.logs : [],
+    trades: Array.isArray(raw.trades) ? raw.trades : [],
+  };
+}
+
+function writeFile(state: AutoTradeState) {
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+  } catch {
+    // File is only a local fallback; DB is the source of truth when configured.
+  }
+}
+
+function dbErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Auto-trade DB sync failed";
 }
 
 export function freshState(): AutoTradeState {

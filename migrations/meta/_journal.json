@@ -50,6 +50,13 @@
       "when": 1788834492606,
       "tag": "0006_sloppy_ezekiel",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788938779344,
+      "tag": "0007_little_talisman",
+      "breakpoints": true
     }
   ]
 }

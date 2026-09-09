@@ -3,10 +3,11 @@ import { checkApiToken } from "@/server/api-token";
 import { env } from "@/server/env";
 import { forceCloseAutoTrade, runAutoTradeCycle } from "@/server/auto-trading/engine";
 import { ensureAutoTradeLoop, getAutoTradeLoopHealth, startAutoTradeScheduler, stopAutoTradeScheduler } from "@/server/auto-trading/loop";
-import { loadAutoTradeState, saveAutoTradeState } from "@/server/auto-trading/state";
+import { flushPendingAutoTradeState, loadAutoTradeState, saveAutoTradeState, syncAutoTradeStateFromDb } from "@/server/auto-trading/state";
 import { AUTO_TRADE_DEFAULTS } from "@/server/auto-trading/types";
 
 export async function GET() {
+  await syncAutoTradeStateFromDb();
   ensureAutoTradeLoop();
   return NextResponse.json(await buildStatusBody());
 }
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
   }
 
   const action = (body as { action?: string }).action ?? "";
+  await syncAutoTradeStateFromDb();
   const state = loadAutoTradeState();
 
   switch (action) {
@@ -34,6 +36,7 @@ export async function POST(request: Request) {
       state.status = "enabled";
       state.lastError = null;
       saveAutoTradeState(state);
+      await flushPendingAutoTradeState();
       startAutoTradeScheduler();
       void ensureAutoTradeLoop();
       const cycle = await runAutoTradeCycle();
@@ -44,11 +47,13 @@ export async function POST(request: Request) {
       state.status = "disabled";
       stopAutoTradeScheduler();
       saveAutoTradeState(state);
+      await flushPendingAutoTradeState();
       return NextResponse.json({ status: await buildStatusBody(state) });
     }
     case "config": {
       applyConfigPatch(state.config, body as Record<string, unknown>);
       saveAutoTradeState(state);
+      await flushPendingAutoTradeState();
       return NextResponse.json({ status: await buildStatusBody(state) });
     }
     case "run-now": {
