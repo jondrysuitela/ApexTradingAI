@@ -8,7 +8,11 @@ import { appendAutoTradeLog, flushPendingAutoTradeState, loadAutoTradeState, rec
 import { computeRiskLevels, resolveDirection, sizeVolume, type SymbolSizingInfo } from "./risk";
 import { evaluateEntry, evaluatePaperExit } from "./decision";
 import { entryMinimums } from "@/server/technical/strictness";
+import { DEFAULT_MARKET_UNIVERSE } from "@/server/market-data/universe";
 import { AUTO_MAGIC, type AutoTradeClosedTrade, type AutoTradeMode, type AutoTradePosition, type AutoTradeState } from "./types";
+
+const AUTO_MARKET_SYMBOL = "AUTO";
+const AUTO_MARKET_CANDIDATES = DEFAULT_MARKET_UNIVERSE.map((item) => item.symbol);
 
 let cycleRunning = false;
 
@@ -164,21 +168,85 @@ async function manageOpenPosition(state: AutoTradeState, bridge: string): Promis
   return closeTrackedPosition(state, position, exitPrice, exitReason);
 }
 
+type SymbolCandidateEvaluation =
+  | { symbol: string; allowed: false; reason: string; score: number; confidence: number }
+  | { symbol: string; allowed: true; reason: string; score: number; confidence: number; direction: "LONG" | "SHORT"; entry: number; stopLoss: number; takeProfit: number; symbolQuote: SymbolQuote };
+
 async function evaluateAndOpen(state: AutoTradeState, bridge: string): Promise<{ message: string }> {
   const cfg = state.config;
+  const autoMode = cfg.symbol === AUTO_MARKET_SYMBOL;
+  const candidates = autoMode ? AUTO_MARKET_CANDIDATES : [cfg.symbol];
+
+  let bestTried: SymbolCandidateEvaluation | null = null;
+  const qualifying: Array<Extract<SymbolCandidateEvaluation, { allowed: true }>> = [];
+
+  for (const symbol of candidates) {
+    let evaluated: SymbolCandidateEvaluation;
+    try {
+      evaluated = await evaluateSymbolEntry(state, bridge, symbol, cfg.timeframe as Timeframe);
+    } catch {
+      continue;
+    }
+    if (!bestTried || evaluated.score > bestTried.score) bestTried = evaluated;
+    if (evaluated.allowed) qualifying.push(evaluated);
+  }
+
+  if (!autoMode) {
+    const single = bestTried;
+    const reason = single?.reason ?? "Evaluasi entri gagal.";
+    if (!single?.allowed) {
+      const skipLog = `Skip entry: ${reason}`;
+      if (state.lastSkipReason !== skipLog) {
+        state.lastSkipReason = skipLog;
+        appendAutoTradeLog(state, "info", skipLog);
+      }
+      state.lastError = null;
+      return { message: reason };
+    }
+    return openEvaluatedEntry(state, bridge, cfg, single);
+  }
+
+  if (qualifying.length === 0) {
+    const reason = bestTried ? (bestTried.allowed ? "data tidak lengkap" : bestTried.reason) : "tidak ada data pasar";
+    const skipLog = bestTried
+      ? `Auto market: pasar terbaik ${bestTried.symbol} (score ${bestTried.score.toFixed(0)}) gagal — ${reason}.`
+      : "Auto market: tidak ada pasar tersedia.";
+    if (state.lastSkipReason !== skipLog) {
+      state.lastSkipReason = skipLog;
+      appendAutoTradeLog(state, "info", skipLog);
+    }
+    state.lastError = null;
+    return { message: skipLog };
+  }
+
+  const best = qualifying.reduce((top, item) => {
+    if (item.score > top.score) return item;
+    if (item.score === top.score && item.confidence > top.confidence) return item;
+    return top;
+  }, qualifying[0]);
+
+  appendAutoTradeLog(state, "info", `Auto market: memilih ${best.symbol} (score ${best.score.toFixed(0)}, ${best.direction}).`);
+  return openEvaluatedEntry(state, bridge, cfg, best);
+}
+
+async function evaluateSymbolEntry(state: AutoTradeState, bridge: string, symbol: string, timeframe: Timeframe): Promise<SymbolCandidateEvaluation> {
+  const cfg = state.config;
   const [candles, spread] = await Promise.all([
-    getCandles(cfg.symbol, cfg.timeframe as Timeframe, 220),
-    getSpreadContext(cfg.symbol, bridge).catch(() => null),
+    getCandles(symbol, timeframe, 220),
+    getSpreadContext(symbol, bridge).catch(() => null),
   ]);
-  const analysis = analyzeMarket(cfg.symbol, cfg.timeframe, candles, spread);
+  const analysis = analyzeMarket(symbol, timeframe, candles, spread);
   const confluence = analysis.signal?.confluence ?? null;
   const scalping = confluence?.scalping ?? null;
   const atr14 = analysis.indicators.atr14;
+  const score = Math.round(confluence?.score ?? 0);
+  const confidence = scalping?.confidence ?? confluence?.score ?? 0;
+
   if (atr14 === null || atr14 <= 0) {
-    return { message: "ATR tidak tersedia — tidak bisa proses SL/TP." };
+    return { symbol, allowed: false, score, confidence, reason: "ATR tidak tersedia — tidak bisa proses SL/TP." };
   }
 
-  const mins = entryMinimums(cfg.timeframe);
+  const mins = entryMinimums(timeframe);
   const decision = evaluateEntry({
     scalping,
     confluence,
@@ -188,42 +256,26 @@ async function evaluateAndOpen(state: AutoTradeState, bridge: string): Promise<{
     },
   });
   if (!decision.allowed) {
-    const skipLog = `Skip entry: ${decision.reason}`;
-    if (state.lastSkipReason !== skipLog) {
-      state.lastSkipReason = skipLog;
-      appendAutoTradeLog(state, "info", skipLog);
-    }
-    state.lastError = null;
-    return { message: decision.reason };
+    return { symbol, allowed: false, score, confidence, reason: decision.reason };
   }
-  state.lastSkipReason = undefined;
 
   const direction = decision.direction as "LONG" | "SHORT";
-  if (cfg.direction === "BUY" && direction !== "LONG") {
-    const skipLog = `Arah dipaksa BUY, tapi sinyal ${direction} — skip.`;
-    if (state.lastSkipReason !== skipLog) {
-      state.lastSkipReason = skipLog;
-      appendAutoTradeLog(state, "info", skipLog);
-    }
-    return { message: skipLog };
-  }
-  if (cfg.direction === "SELL" && direction !== "SHORT") {
-    const skipLog = `Arah dipaksa SELL, tapi sinyal ${direction} — skip.`;
-    if (state.lastSkipReason !== skipLog) {
-      state.lastSkipReason = skipLog;
-      appendAutoTradeLog(state, "info", skipLog);
-    }
-    return { message: skipLog };
+  if ((cfg.direction === "BUY" && direction !== "LONG") || (cfg.direction === "SELL" && direction !== "SHORT")) {
+    return { symbol, allowed: false, score, confidence, reason: `Arah dipaksa ${cfg.direction}, tapi sinyal ${direction} — skip.` };
   }
 
-  const symbolQuote = await fetchSymbolQuote(bridge, cfg.symbol);
+  const symbolQuote = await fetchSymbolQuote(bridge, symbol);
   const entry = resolveDirection(direction === "LONG" ? "BUY" : "SELL", symbolQuote.bid ?? undefined, symbolQuote.ask ?? undefined, candles.at(-1)?.close);
   if (!Number.isFinite(entry)) {
-    appendAutoTradeLog(state, "warn", "Entry price tidak valid (bid/ask/close kosong) — entry dibatalkan.");
-    return { message: "Entry price tidak valid — data quote/candle kosong." };
+    return { symbol, allowed: false, score, confidence, reason: "Entry price tidak valid — data quote/candle kosong." };
   }
 
   const { stopLoss, takeProfit } = computeRiskLevels(entry, atr14, direction === "LONG" ? "BUY" : "SELL", cfg.slAtrMultiplier, cfg.tpRiskReward);
+  return { symbol, allowed: true, reason: "OK", score, confidence, direction, entry, stopLoss, takeProfit, symbolQuote };
+}
+
+async function openEvaluatedEntry(state: AutoTradeState, bridge: string, cfg: AutoTradeState["config"], evaluated: Extract<SymbolCandidateEvaluation, { allowed: true }>): Promise<{ message: string }> {
+  const { symbol, direction, entry, stopLoss, takeProfit, symbolQuote } = evaluated;
 
   const account = await fetchAccountEquity(bridge);
   const equity = cfg.mode === "paper" ? state.paper.equity : Math.max(account.equity, account.balance);
@@ -247,26 +299,26 @@ async function evaluateAndOpen(state: AutoTradeState, bridge: string): Promise<{
         return { message: msg };
       }
     }
-    if (await hasOpenRealAutoPosition(bridge, state, cfg.symbol, cfg.maxOpenPositions)) {
+    if (await hasOpenRealAutoPosition(bridge, state, symbol, cfg.maxOpenPositions, cfg.symbol === AUTO_MARKET_SYMBOL)) {
       return { message: "Jumlah posisi auto-trade real sudah mencapai batas maksimal." };
     }
-    return openRealPosition(state, bridge, { symbol: cfg.symbol, timeframe: cfg.timeframe }, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, cfg.mode, symbolQuote.contractSize);
+    return openRealPosition(state, bridge, { symbol, timeframe: cfg.timeframe }, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, cfg.mode, symbolQuote.contractSize);
   }
 
-  return openPaperPosition(state, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, symbolQuote.contractSize);
+  return openPaperPosition(state, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, symbolQuote.contractSize, symbol);
 }
 
-async function hasOpenRealAutoPosition(bridge: string, state: AutoTradeState, symbol: string, maxOpenPositions: number): Promise<boolean> {
-  const positions = await fetchBridgePositions(bridge, symbol);
+async function hasOpenRealAutoPosition(bridge: string, state: AutoTradeState, symbol: string, maxOpenPositions: number, countAll = false): Promise<boolean> {
+  const positions = await fetchBridgePositions(bridge, countAll ? "" : symbol);
   const autoPositions = positions.filter((item) => item.magic === AUTO_MAGIC || String(item.ticket) === state.position?.ticket);
   return autoPositions.length >= Math.max(1, Math.floor(maxOpenPositions));
 }
 
-function openPaperPosition(state: AutoTradeState, entry: number, stopLoss: number, takeProfit: number, volume: number, riskAmount: number, direction: "LONG" | "SHORT", contractSize = 100) {
+function openPaperPosition(state: AutoTradeState, entry: number, stopLoss: number, takeProfit: number, volume: number, riskAmount: number, direction: "LONG" | "SHORT", contractSize = 100, symbol = state.config.symbol) {
   const position: AutoTradePosition = {
     ticket: `paper-${Date.now()}`,
     mode: "paper",
-    symbol: state.config.symbol,
+    symbol,
     timeframe: state.config.timeframe,
     action: direction === "LONG" ? "BUY" : "SELL",
     entryPrice: entry,

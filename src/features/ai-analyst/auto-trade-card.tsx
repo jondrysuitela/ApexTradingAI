@@ -59,19 +59,22 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
 
   const configSymbol = data?.config?.symbol ?? workspaceSymbol;
   const configTimeframe = data?.config?.timeframe ?? workspaceTimeframe;
-  const symbolMismatch = workspaceSymbol.toUpperCase() !== configSymbol.toUpperCase();
+  const symbolMismatch = configSymbol !== "AUTO" && workspaceSymbol.toUpperCase() !== configSymbol.toUpperCase();
 
   useEffect(() => {
     if (!data?.config || !workspaceSymbol || busy) return;
     if (data.position) return;
-    if (configSymbol.toUpperCase() === workspaceSymbol.toUpperCase()) return;
+    if (configSymbol === "AUTO" || configSymbol.toUpperCase() === workspaceSymbol.toUpperCase()) return;
     if (!data.enabled) {
       void post({ action: "config", symbol: workspaceSymbol });
     }
   }, [workspaceSymbol, configSymbol, data?.position, data?.enabled]);
 
-  const symbols = brokerSymbols.length > 0 ? brokerSymbols : ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "USDIDR", "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD", "SPX", "IXIC"];
-  const symbolOptions = symbols.some((item) => item.toUpperCase() === configSymbol.toUpperCase()) ? symbols : [...symbols, configSymbol];
+  const baseSymbols = brokerSymbols.length > 0 ? brokerSymbols : ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "USDIDR", "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD", "SPX", "IXIC"];
+  const symbolOptions = [
+    "AUTO",
+    ...(configSymbol !== "AUTO" && !baseSymbols.some((item) => item.toUpperCase() === configSymbol.toUpperCase()) ? [...baseSymbols, configSymbol] : baseSymbols),
+  ];
   const timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
   const slSizes = [0.5, 0.75, 1, 1.5, 2, 3];
   const targets = [2, 3, 5, 8, 12];
@@ -173,7 +176,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
             className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
           >
             {symbolOptions.map((item) => (
-              <option key={item} value={item} className="bg-slate-950">{item}</option>
+              <option key={item} value={item} className="bg-slate-950">{item === "AUTO" ? "AUTO (cari pasar otomatis)" : item}</option>
             ))}
           </select>
         </div>
@@ -268,8 +271,12 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-500">
           {data?.enabled
             ? data?.lastSkipReason
-              ? `Menunggu sinyal scalping + confluence searah — ${data.lastSkipReason}`
-              : "Menunggu sinyal scalping + confluence searah..."
+              ? configSymbol === "AUTO"
+                ? `Auto market aktif — memindai pasar terbaik. ${data.lastSkipReason}`
+                : `Menunggu sinyal scalping + confluence searah — ${data.lastSkipReason}`
+              : configSymbol === "AUTO"
+                ? "Auto market aktif — memindai pasar terbaik..."
+                : "Menunggu sinyal scalping + confluence searah..."
             : "Auto-trading mati. Tekan START untuk memulai loop."}
         </div>
       )}
