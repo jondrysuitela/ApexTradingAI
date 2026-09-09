@@ -76,8 +76,9 @@ function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<strin
   if (typeof body.direction === "string" && (body.direction === "AUTO" || body.direction === "BUY" || body.direction === "SELL")) patch.direction = body.direction;
   if (typeof body.symbol === "string" && /^[A-Za-z0-9_.=^-]+$/.test(body.symbol)) patch.symbol = body.symbol.toUpperCase();
   if (typeof body.timeframe === "string" && ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"].includes(body.timeframe)) patch.timeframe = body.timeframe;
-  const numbers: Array<"riskPercent" | "slAtrMultiplier" | "tpRiskReward" | "minConfluenceScore" | "minScalpingConfidence" | "loopIntervalMs" | "maxOpenPositions"> = [
+  const numbers: Array<"riskPercent" | "fixedLot" | "slAtrMultiplier" | "tpRiskReward" | "minConfluenceScore" | "minScalpingConfidence" | "loopIntervalMs" | "maxOpenPositions"> = [
     "riskPercent",
+    "fixedLot",
     "slAtrMultiplier",
     "tpRiskReward",
     "minConfluenceScore",

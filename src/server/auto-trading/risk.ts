@@ -47,6 +47,22 @@ export function sizeVolume(input: {
   return { volume, riskAmount, riskPerUnit, clipped };
 }
 
+export function sizeFixedLot(input: {
+  lot: number;
+  entry: number;
+  stopLoss: number;
+  symbol: SymbolSizingInfo;
+}): VolumeSizing {
+  const { lot, entry, stopLoss, symbol } = input;
+  const step = symbol.volumeStep > 0 ? symbol.volumeStep : 0.01;
+  const volume = roundStep(Math.min(Math.max(lot, symbol.volumeMin), symbol.volumeMax), step);
+  const riskPerUnit = Math.max(Math.abs(entry - stopLoss), Number.EPSILON);
+  const riskAmount = volume * riskPerUnit * Math.max(symbol.contractSize, 1);
+  const clipped = volume !== roundStep(lot, step) || lot < symbol.volumeMin || lot > symbol.volumeMax;
+
+  return { volume, riskAmount, riskPerUnit, clipped };
+}
+
 export function roundStep(value: number, step: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   const digits = Math.max(0, stepDecimalDigits(step));

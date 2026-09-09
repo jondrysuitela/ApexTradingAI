@@ -9,6 +9,7 @@ export type AutoTradeConfig = {
   timeframe: string;
   direction: AutoTradeDirection;
   riskPercent: number;
+  fixedLot: number;
   slAtrMultiplier: number;
   tpRiskReward: number;
   maxOpenPositions: number;
@@ -83,6 +84,7 @@ export const AUTO_TRADE_DEFAULTS: AutoTradeConfig = {
   timeframe: "5m",
   direction: "AUTO",
   riskPercent: 1,
+  fixedLot: 0.01,
   slAtrMultiplier: 0.75,
   tpRiskReward: 5,
   maxOpenPositions: 1,

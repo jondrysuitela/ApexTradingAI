@@ -20,6 +20,7 @@ type AutoTradeStatus = {
     timeframe: string;
     direction: "AUTO" | "BUY" | "SELL";
     riskPercent: number;
+    fixedLot: number;
     slAtrMultiplier: number;
     tpRiskReward: number;
     minConfluenceScore: number;
@@ -78,6 +79,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
   const timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
   const slSizes = [0.5, 0.75, 1, 1.5, 2, 3];
   const targets = [2, 3, 5, 8, 12];
+  const lots = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1];
 
   const unrealized = useMemo(() => {
     if (!position || position.lastPrice === null) return null;
@@ -194,6 +196,19 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
           </select>
         </div>
         <Field label="Risk / trade" value={`${data?.config?.riskPercent ?? 1}%`} />
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Lot</div>
+          <select
+            value={data?.config?.fixedLot ?? 0.01}
+            onChange={(event) => post({ action: "config", fixedLot: Number(event.target.value) })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            {lots.map((item) => (
+              <option key={item} value={item} className="bg-slate-950">{item.toFixed(2)} lot</option>
+            ))}
+          </select>
+        </div>
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">SL size</div>
           <select

@@ -5,7 +5,7 @@ import { getCandles, getTicker } from "@/server/market-data/service";
 import { getSpreadContext } from "@/server/market-data/symbol-context";
 import type { Timeframe } from "@/lib/timeframes";
 import { appendAutoTradeLog, flushPendingAutoTradeState, loadAutoTradeState, recordAutoTrade, roundTo, saveAutoTradeState, setPosition, syncAutoTradeStateFromDb } from "./state";
-import { computeRiskLevels, resolveDirection, sizeVolume, type SymbolSizingInfo } from "./risk";
+import { computeRiskLevels, resolveDirection, sizeFixedLot, sizeVolume, type SymbolSizingInfo } from "./risk";
 import { evaluateEntry, evaluatePaperExit } from "./decision";
 import { entryMinimums } from "@/server/technical/strictness";
 import { DEFAULT_MARKET_UNIVERSE } from "@/server/market-data/universe";
@@ -283,7 +283,10 @@ async function openEvaluatedEntry(state: AutoTradeState, bridge: string, cfg: Au
     throw new Error(`Equity tidak valid: ${equity}`);
   }
 
-  const sizing = sizeVolume({ equity, riskPercent: cfg.riskPercent, entry, stopLoss, symbol: symbolQuote });
+  const sizing =
+    cfg.fixedLot > 0
+      ? sizeFixedLot({ lot: cfg.fixedLot, entry, stopLoss, symbol: symbolQuote })
+      : sizeVolume({ equity, riskPercent: cfg.riskPercent, entry, stopLoss, symbol: symbolQuote });
 
   if (cfg.mode === "demo" || cfg.mode === "real") {
     if (!account.tradeAllowed) {
