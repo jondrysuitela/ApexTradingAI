@@ -1,0 +1,1 @@
+ALTER TABLE "paper_orders" ADD COLUMN "realized_pnl" numeric(24, 10);

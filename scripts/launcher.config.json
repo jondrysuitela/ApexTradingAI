@@ -1,0 +1,8 @@
+{
+  "mt5Path": "C:\\Program Files\\Finex Bisnis Solusi MT5 Terminal\\terminal64.exe",
+  "mt5BridgeDir": ".\\mt5-bridge",
+  "mt5BridgeHost": "127.0.0.1",
+  "mt5BridgePort": 8787,
+  "appHost": "0.0.0.0",
+  "appPort": 3000
+}
