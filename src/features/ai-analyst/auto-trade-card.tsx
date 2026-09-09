@@ -43,6 +43,7 @@ type AutoTradeStatus = {
   stats: { trades: number; wins: number; winRate: number; realizedPnl: number; balance: number; equity: number };
   lastCycle: { at: string; message: string } | null;
   lastError: string | null;
+  lastSkipReason: string | null;
   logs: Array<{ ts: string; level: string; message: string }>;
   loop: { running: boolean; lastTickAt: number | null };
 };
@@ -258,7 +259,11 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         </div>
       ) : (
         <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-500">
-          {data?.enabled ? "Menunggu sinyal scalping + confluence searah..." : "Auto-trading mati. Tekan START untuk memulai loop."}
+          {data?.enabled
+            ? data?.lastSkipReason
+              ? `Menunggu sinyal scalping + confluence searah — ${data.lastSkipReason}`
+              : "Menunggu sinyal scalping + confluence searah..."
+            : "Auto-trading mati. Tekan START untuk memulai loop."}
         </div>
       )}
 

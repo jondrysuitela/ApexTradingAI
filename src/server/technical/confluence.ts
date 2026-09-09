@@ -534,12 +534,12 @@ export function computeConfluence(candles: CandleInput[], options: ConfluenceOpt
     }
   }
 
-  const totalMax = factors.reduce((sum, f) => sum + f.weight, 0);
-  const longPct = totalMax > 0 ? (longScore / totalMax) * 100 : 0;
-  const shortPct = totalMax > 0 ? (shortScore / totalMax) * 100 : 0;
-  const netScore = longPct - shortPct;
+  const voted = longScore + shortScore;
+  const longShare = voted > 0 ? longScore / voted : 0;
+  const shortShare = voted > 0 ? shortScore / voted : 0;
+  const netScore = (longShare - shortShare) * 100;
   const direction = netScore > 10 ? "LONG" : netScore < -10 ? "SHORT" : "NEUTRAL";
-  const confidence = Math.min(100, Math.round(Math.max(longPct, shortPct)));
+  const confidence = Math.min(100, Math.round(Math.max(longShare, shortShare) * 100));
   const score = Math.round(Math.abs(netScore));
 
   const scalping = readScalping(candles, regime, { spread: options.spread ?? null, date: options.date });

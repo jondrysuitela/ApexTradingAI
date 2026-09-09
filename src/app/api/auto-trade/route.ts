@@ -146,6 +146,7 @@ async function buildStatusBody(state = loadAutoTradeState()) {
     },
     lastCycle: state.lastCycle,
     lastError: state.lastError,
+    lastSkipReason: state.lastSkipReason ?? null,
     trades: state.trades.slice(-10).reverse(),
     logs: state.logs.slice(-25).reverse(),
     loop: getAutoTradeLoopHealth(),
