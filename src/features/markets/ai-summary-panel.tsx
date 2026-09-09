@@ -3,11 +3,15 @@
 import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 export function AiSummaryPanel({ symbol, timeframe }: { symbol: string; timeframe: string }) {
   const query = useSWR<{ analysis: { status: string; summary: string; bullishFactors: string[]; bearishFactors: string[]; riskFactors: string[]; scenarioAnalysis: string[]; invalidation: string; provider: string; confirmations?: Array<{ timeframe: string; bias: "LONG" | "SHORT" | "NEUTRAL"; confidence: number; latestClose: number | null }>; multiTimeframe?: { alignment: "LONG" | "SHORT" | "NEUTRAL"; longVotes: number; shortVotes: number; neutralVotes: number } } }>(
-    `/api/ai/analysis?symbol=${symbol}&timeframe=${timeframe}&limit=120`,
+    `/api/ai/analysis?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=120`,
     fetcher,
     { refreshInterval: 15000 },
   );
@@ -46,7 +50,7 @@ function Section({ label, items }: { label: string; items: string[] }) {
     <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
       <div className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</div>
       <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-300">
-        {items.length ? items.map((item) => <li key={item}>{item}</li>) : <li>NOT CONNECTED</li>}
+        {items.length ? items.map((item, index) => <li key={`${item}-${index}`}>{item}</li>) : <li>NOT CONNECTED</li>}
       </ul>
     </div>
   );

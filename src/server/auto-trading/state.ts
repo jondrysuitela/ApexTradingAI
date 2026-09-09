@@ -16,6 +16,9 @@ const FLUSH_DELAY_MS = 800;
 let cache: AutoTradeState | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let persistenceError: string | null = null;
+let flushInFlight: Promise<void> | null = null;
+const FLUSH_RETRIES = 3;
+const FLUSH_RETRY_DELAY_MS = 250;
 
 export function loadAutoTradeState(): AutoTradeState {
   if (!cache) {
@@ -73,20 +76,38 @@ function scheduleFlush() {
 }
 
 async function flushToDb(): Promise<void> {
+  if (flushInFlight) {
+    return flushInFlight;
+  }
+  flushInFlight = doFlush();
+  try {
+    await flushInFlight;
+  } finally {
+    flushInFlight = null;
+  }
+}
+
+async function doFlush(): Promise<void> {
   const db = getDb();
   if (!db || !cache) return;
 
-  try {
-    await db
-      .insert(autoTradeStateTable)
-      .values({ id: SINGLETON_ID, data: cache as unknown as Record<string, unknown>, updatedAt: new Date() })
-      .onConflictDoUpdate({
-        target: autoTradeStateTable.id,
-        set: { data: cache as unknown as Record<string, unknown>, updatedAt: new Date() },
-      });
-    persistenceError = null;
-  } catch (error) {
-    persistenceError = dbErrorMessage(error);
+  for (let attempt = 0; attempt < FLUSH_RETRIES; attempt += 1) {
+    try {
+      await db
+        .insert(autoTradeStateTable)
+        .values({ id: SINGLETON_ID, data: cache as unknown as Record<string, unknown>, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: autoTradeStateTable.id,
+          set: { data: cache as unknown as Record<string, unknown>, updatedAt: new Date() },
+        });
+      persistenceError = null;
+      return;
+    } catch (error) {
+      persistenceError = dbErrorMessage(error);
+      if (attempt < FLUSH_RETRIES - 1) {
+        await new Promise((resolve) => setTimeout(resolve, FLUSH_RETRY_DELAY_MS * (attempt + 1)));
+      }
+    }
   }
 }
 
@@ -151,13 +172,15 @@ export function appendAutoTradeLog(state: AutoTradeState, level: AutoTradeLog["l
 
 export function recordAutoTrade(state: AutoTradeState, trade: AutoTradeClosedTrade) {
   state.trades = [...state.trades, trade].slice(-MAX_TRADES);
-  state.paper.trades += 1;
-  if (trade.realizedPnl > 0) {
-    state.paper.wins += 1;
+  if (trade.mode === "paper") {
+    state.paper.trades += 1;
+    if (trade.realizedPnl > 0) {
+      state.paper.wins += 1;
+    }
+    state.paper.realizedPnl = roundTo(state.paper.realizedPnl + trade.realizedPnl, 2);
+    state.paper.balance = roundTo(state.paper.balance + trade.realizedPnl, 2);
+    state.paper.equity = roundTo(state.paper.equity + trade.realizedPnl, 2);
   }
-  state.paper.realizedPnl = roundTo(state.paper.realizedPnl + trade.realizedPnl, 2);
-  state.paper.balance = roundTo(state.paper.balance + trade.realizedPnl, 2);
-  state.paper.equity = roundTo(state.paper.equity + trade.realizedPnl, 2);
 }
 
 export function setPosition(state: AutoTradeState, position: AutoTradePosition | null) {

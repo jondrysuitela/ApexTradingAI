@@ -208,8 +208,8 @@ function buildLocalAnalysis(analysis: AnalysisWithSignal, news: NewsContext | nu
 
   return {
     provider: "local-deterministic",
-    connected: true,
-    status: "CONNECTED" as const,
+    connected: false,
+    status: "NOT CONNECTED" as const,
     summary: analysis.latestClose
       ? `${analysis.symbol} ${analysis.timeframe} dianalisis dari data market aktif. Trend saat ini ${trend}, RSI ${rsi ? rsi.toFixed(1) : "n/a"}, signal deterministic membaca ${signal?.action ?? "WAIT"}.${confluenceText}${strategyText}${backtestText}${scalpingText}${orderFlowText}${learningText}${newsText}${mtfText}${confirmationText}`
       : `${analysis.symbol} ${analysis.timeframe} belum punya candle valid dari provider, jadi analisis ditahan.`,

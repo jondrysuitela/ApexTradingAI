@@ -4,7 +4,11 @@ import useSWR from "swr";
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type Snapshot = {
   account: { name: string; balance: string; equity: string; realizedPnl: string };
@@ -208,7 +212,7 @@ function Section({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3 text-sm">
       <div className="text-xs uppercase tracking-[0.25em] text-slate-500">{title}</div>
-      <div className="mt-2 grid gap-1 text-slate-300">{items.length ? items.map((item) => <div key={item}>{item}</div>) : <div>NOT CONNECTED</div>}</div>
+      <div className="mt-2 grid gap-1 text-slate-300">{items.length ? items.map((item, index) => <div key={`${item}-${index}`}>{item}</div>) : <div>NOT CONNECTED</div>}</div>
     </div>
   );
 }

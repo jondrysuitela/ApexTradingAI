@@ -3,7 +3,11 @@
 import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type NewsRead = {
   sentiment: { count: number; bullShare: number; bearShare: number; net: number; label: "BULLISH" | "BEARISH" | "NEUTRAL" } | null;
@@ -49,8 +53,8 @@ export function NewsCalendarCard({ symbol, timeframe }: { symbol: string; timefr
         <div className="mt-3 space-y-2 text-sm">
           {news.topHeadlines.length ? (
             <div className="space-y-1.5">
-              {news.topHeadlines.slice(0, 3).map((headline) => (
-                <Headline key={headline.title} title={headline.title} sentiment={headline.sentiment} url={headline.url} />
+              {news.topHeadlines.slice(0, 3).map((headline, index) => (
+                <Headline key={`${headline.title}-${index}`} title={headline.title} sentiment={headline.sentiment} url={headline.url} />
               ))}
             </div>
           ) : (

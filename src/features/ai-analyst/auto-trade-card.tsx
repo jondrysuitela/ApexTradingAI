@@ -5,7 +5,11 @@ import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 import { appTokenHeaders } from "@/lib/app-token";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type AutoTradeStatus = {
   enabled: boolean;
@@ -43,7 +47,7 @@ type AutoTradeStatus = {
   loop: { running: boolean; lastTickAt: number | null };
 };
 
-export function AutoTradeCard() {
+export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTimeframe }: { symbol: string; timeframe: string }) {
   const { data, mutate, isLoading } = useSWR<AutoTradeStatus>("/api/auto-trade", fetcher, { refreshInterval: 10000 });
   const [busy, setBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -51,6 +55,10 @@ export function AutoTradeCard() {
   const position = data?.position ?? null;
   const stats = data?.stats ?? null;
   const sideColor = position?.action === "BUY" ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300" : "border-red-400/40 bg-red-500/20 text-red-300";
+
+  const configSymbol = data?.config?.symbol ?? workspaceSymbol;
+  const configTimeframe = data?.config?.timeframe ?? workspaceTimeframe;
+  const symbolMismatch = workspaceSymbol.toUpperCase() !== configSymbol.toUpperCase();
 
   const symbols = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
@@ -115,6 +123,11 @@ export function AutoTradeCard() {
 
       {data?.lastError ? <div className="mt-2 rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{data.lastError}</div> : null}
       {actionMessage ? <div className="mt-2 rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-xs text-cyan-200">{actionMessage}</div> : null}
+      {symbolMismatch ? (
+        <div className="mt-2 rounded-lg border border-yellow-400/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">
+          ⚠ Auto-trade berjalan di <span className="font-mono">{configSymbol}</span>, tapi aktif di <span className="font-mono">{workspaceSymbol}</span>. Trade akan dikunci pada symbol auto-trade, bukan yang sedang dianalisis.
+        </div>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm lg:grid-cols-3">
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
@@ -146,7 +159,7 @@ export function AutoTradeCard() {
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Pasar</div>
           <select
-            value={data?.config?.symbol ?? "XAUUSD"}
+            value={configSymbol}
             onChange={(event) => post({ action: "config", symbol: event.target.value })}
             disabled={busy}
             className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
@@ -159,7 +172,7 @@ export function AutoTradeCard() {
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Timeframe</div>
           <select
-            value={data?.config?.timeframe ?? "5m"}
+            value={configTimeframe}
             onChange={(event) => post({ action: "config", timeframe: event.target.value })}
             disabled={busy}
             className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
@@ -281,8 +294,8 @@ export function AutoTradeCard() {
       </div>
 
       <div className="mt-3 max-h-28 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-slate-950/40 p-2 text-[11px] text-slate-400">
-        {(data?.logs?.length ? data.logs : []).slice(0, 12).map((entry) => (
-          <div key={entry.ts} className="flex gap-2">
+        {(data?.logs?.length ? data.logs : []).slice(0, 12).map((entry, index) => (
+          <div key={`${entry.ts}-${index}`} className="flex gap-2">
             <span className="shrink-0 text-slate-600">{new Date(entry.ts).toLocaleTimeString("id-ID")}</span>
             <span className={entry.level === "error" ? "text-red-300" : entry.level === "trade" ? "text-cyan-200" : "text-slate-400"}>{entry.message}</span>
           </div>

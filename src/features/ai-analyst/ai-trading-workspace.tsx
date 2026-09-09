@@ -16,7 +16,11 @@ import { AutoTradeCard } from "@/features/ai-analyst/auto-trade-card";
 import { LivePositionsPanel } from "@/features/ai-analyst/live-positions-panel";
 import { AiAlertTicker } from "@/features/ai-analyst/ai-alert-ticker";
 import type { AlertContext } from "@/server/ai/alerts";
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type Summary = {
   symbol: string;
@@ -206,7 +210,7 @@ export function AiTradingWorkspace() {
           <div className="grid gap-5">
             <div className="grid gap-5 xl:sticky xl:top-2 xl:z-20 xl:rounded-2xl xl:border xl:border-white/10 xl:bg-[#0c1226] xl:p-4 xl:shadow-lg xl:shadow-black/20">
               <AiAlertTicker alert={summaryQuery.data?.alert ?? null} symbol={symbol} timeframe={timeframe} />
-              <AutoTradeCard />
+              <AutoTradeCard symbol={symbol} timeframe={timeframe} />
               <ScalpingReadCard symbol={symbol} timeframe={timeframe} />
               <OrderFlowReadCard symbol={symbol} timeframe={timeframe} />
               <NewsCalendarCard symbol={symbol} timeframe={timeframe} />
@@ -262,8 +266,8 @@ function SignalCard({ signal }: { signal: Summary["signal"] | null }) {
         <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs">
           <div className="text-[10px] uppercase tracking-[0.25em] text-slate-500">Reasons</div>
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-slate-300">
-            {signal.reasons.slice(0, 4).map((item) => (
-              <li key={item}>{item}</li>
+            {signal.reasons.slice(0, 4).map((item, index) => (
+              <li key={`${item}-${index}`}>{item}</li>
             ))}
           </ul>
         </div>
@@ -272,8 +276,8 @@ function SignalCard({ signal }: { signal: Summary["signal"] | null }) {
         <div className="mt-2 rounded-xl border border-yellow-400/20 bg-yellow-500/5 p-3 text-xs text-yellow-200/80">
           <div className="text-[10px] uppercase tracking-[0.25em] text-yellow-400/70">Warnings</div>
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
-            {signal.warnings.slice(0, 3).map((item) => (
-              <li key={item}>{item}</li>
+            {signal.warnings.slice(0, 3).map((item, index) => (
+              <li key={`${item}-${index}`}>{item}</li>
             ))}
           </ul>
         </div>

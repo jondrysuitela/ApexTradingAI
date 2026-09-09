@@ -4,7 +4,11 @@ import { useState } from "react";
 import useSWR from "swr";
 import { appTokenHeaders } from "@/lib/app-token";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type TradeMode = "paper" | "live";
 

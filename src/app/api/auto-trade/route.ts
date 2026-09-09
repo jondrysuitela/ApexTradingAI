@@ -38,7 +38,6 @@ export async function POST(request: Request) {
       saveAutoTradeState(state);
       await flushPendingAutoTradeState();
       startAutoTradeScheduler();
-      void ensureAutoTradeLoop();
       const cycle = await runAutoTradeCycle();
       return NextResponse.json({ status: await buildStatusBody(loadAutoTradeState()), cycle });
     }
@@ -54,6 +53,7 @@ export async function POST(request: Request) {
       applyConfigPatch(state.config, body as Record<string, unknown>);
       saveAutoTradeState(state);
       await flushPendingAutoTradeState();
+      ensureAutoTradeLoop();
       return NextResponse.json({ status: await buildStatusBody(state) });
     }
     case "run-now": {
@@ -76,18 +76,20 @@ function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<strin
   if (typeof body.direction === "string" && (body.direction === "AUTO" || body.direction === "BUY" || body.direction === "SELL")) patch.direction = body.direction;
   if (typeof body.symbol === "string" && /^[A-Za-z0-9_.=^-]+$/.test(body.symbol)) patch.symbol = body.symbol.toUpperCase();
   if (typeof body.timeframe === "string" && ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"].includes(body.timeframe)) patch.timeframe = body.timeframe;
-  const numbers: Array<"riskPercent" | "slAtrMultiplier" | "tpRiskReward" | "minConfluenceScore" | "minScalpingConfidence" | "loopIntervalMs"> = [
+  const numbers: Array<"riskPercent" | "slAtrMultiplier" | "tpRiskReward" | "minConfluenceScore" | "minScalpingConfidence" | "loopIntervalMs" | "maxOpenPositions"> = [
     "riskPercent",
     "slAtrMultiplier",
     "tpRiskReward",
     "minConfluenceScore",
     "minScalpingConfidence",
     "loopIntervalMs",
+    "maxOpenPositions",
   ];
   for (const key of numbers) {
     const value = Number(body[key]);
     if (Number.isFinite(value) && value > 0) patch[key] = value;
   }
+  if (typeof patch.maxOpenPositions === "number") patch.maxOpenPositions = Math.max(1, Math.round(patch.maxOpenPositions));
   if (body.slSize != null && Number.isFinite(Number(body.slSize)) && Number(body.slSize) > 0) patch.slAtrMultiplier = Number(body.slSize);
   if (body.target != null && Number.isFinite(Number(body.target)) && Number(body.target) > 0) patch.tpRiskReward = Number(body.target);
   Object.assign(config, patch);

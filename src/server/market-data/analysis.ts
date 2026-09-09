@@ -52,7 +52,8 @@ export function analyzeMarket(symbol: string, timeframe: string, candles: Candle
 }
 
 export async function analyzeMarketWithConfirmation(symbol: string, timeframe: Timeframe, limit: number): Promise<ReturnType<typeof analyzeMarket> & { confirmations: TimeframeConfirmation[]; multiTimeframe: MultiTimeframeAlignment }> {
-  const candlesByTimeframe = await getCandlesForTimeframes(symbol, CONFIRMATION_TIMEFRAMES, limit);
+  const fetchTimeframes = Array.from(new Set<Timeframe>([timeframe, ...CONFIRMATION_TIMEFRAMES]));
+  const candlesByTimeframe = await getCandlesForTimeframes(symbol, fetchTimeframes, limit);
   const spread = await getSpreadContext(symbol, env.MT5_BRIDGE_URL);
   const primary = analyzeMarket(symbol, timeframe, candlesByTimeframe[timeframe] ?? [], spread);
   const confirmations = CONFIRMATION_TIMEFRAMES.map((tf) => summarizeTimeframe(tf, candlesByTimeframe[tf] ?? [], spread));

@@ -3,6 +3,7 @@ import { loadAutoTradeState, saveAutoTradeState } from "./state";
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let lastTickAt: number | null = null;
+let currentIntervalMs: number | null = null;
 
 export function autoTradeLoopRunning() {
   return timer !== null;
@@ -14,14 +15,20 @@ export function ensureAutoTradeLoop() {
     stopAutoTradeScheduler();
     return false;
   }
+
+  const intervalMs = Math.max(Number(state.config.loopIntervalMs) || 15000, 5000);
   if (timer) {
-    return true;
+    if (currentIntervalMs === intervalMs) {
+      return true;
+    }
+    clearInterval(timer);
   }
 
+  currentIntervalMs = intervalMs;
   timer = setInterval(() => {
     lastTickAt = Date.now();
     void runAutoTradeCycle();
-  }, state.config.loopIntervalMs);
+  }, intervalMs);
 
   return true;
 }

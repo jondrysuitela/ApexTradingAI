@@ -3,7 +3,11 @@
 import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type ScalpingRead = {
   direction: "LONG" | "SHORT" | "NEUTRAL";
@@ -35,7 +39,7 @@ const liquidityColor = { BEST: "text-emerald-400", HIGH: "text-emerald-400", GOO
 
 export function ScalpingReadCard({ symbol, timeframe }: { symbol: string; timeframe: string }) {
   const { data } = useSWR<{ analysis: { scalping: ScalpingRead | null } }>(
-    `/api/ai/analysis?symbol=${symbol}&timeframe=${timeframe}&limit=120`,
+    `/api/ai/analysis?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=120`,
     fetcher,
     { refreshInterval: 15000 },
   );
@@ -82,8 +86,8 @@ export function ScalpingReadCard({ symbol, timeframe }: { symbol: string; timefr
           <p className="text-slate-400">{scalping.suggestion}</p>
           {scalping.reasoning.length ? (
             <div className="text-xs text-slate-500">
-              {scalping.reasoning.slice(0, 3).map((reason) => (
-                <div key={reason}>- {reason}</div>
+              {scalping.reasoning.slice(0, 3).map((reason, index) => (
+                <div key={`${reason}-${index}`}>- {reason}</div>
               ))}
             </div>
           ) : null}

@@ -3,7 +3,11 @@
 import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type WatchlistItem = { symbol: string; label: string };
 

@@ -13,7 +13,11 @@ import { AiSummaryPanel } from "@/features/markets/ai-summary-panel";
 import { RiskPanel } from "@/features/risk/risk-panel";
 import { useState } from "react";
 
-const fetcher = (url: string) => fetch(url).then((response) => response.json());
+const fetcher = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+};
 
 type Summary = {
   symbol: string;
@@ -30,7 +34,7 @@ export function MarketOverview() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
   const candlesQuery = useSWR<{ candles: Array<{ timestamp: string; open: number; high: number; low: number; close: number; volume: number }> }>(
-    `/api/market-data/candles?symbol=${symbol}&timeframe=${timeframe}&limit=120`,
+    `/api/market-data/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=120`,
     fetcher,
     { refreshInterval: 60000 },
   );
@@ -38,7 +42,7 @@ export function MarketOverview() {
   const candles = candlesQuery.data?.candles ?? [];
   const latest = candles.at(-1);
   const summaryQuery = useSWR<{ analysis: Summary }>(
-    `/api/market-data/analysis?symbol=${symbol}&timeframe=${timeframe}&limit=120`,
+    `/api/market-data/analysis?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=120`,
     fetcher,
     { refreshInterval: 60000 },
   );

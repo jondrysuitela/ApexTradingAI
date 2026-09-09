@@ -218,6 +218,10 @@ async function evaluateAndOpen(state: AutoTradeState, bridge: string): Promise<{
 
   const symbolQuote = await fetchSymbolQuote(bridge, cfg.symbol);
   const entry = resolveDirection(direction === "LONG" ? "BUY" : "SELL", symbolQuote.bid ?? undefined, symbolQuote.ask ?? undefined, candles.at(-1)?.close);
+  if (!Number.isFinite(entry)) {
+    appendAutoTradeLog(state, "warn", "Entry price tidak valid (bid/ask/close kosong) — entry dibatalkan.");
+    return { message: "Entry price tidak valid — data quote/candle kosong." };
+  }
 
   const { stopLoss, takeProfit } = computeRiskLevels(entry, atr14, direction === "LONG" ? "BUY" : "SELL", cfg.slAtrMultiplier, cfg.tpRiskReward);
 
@@ -243,18 +247,19 @@ async function evaluateAndOpen(state: AutoTradeState, bridge: string): Promise<{
         return { message: msg };
       }
     }
-    if (await hasOpenRealAutoPosition(bridge, state, cfg.symbol)) {
-      return { message: "Ada posisi real auto-trade lain sudah terbuka." };
+    if (await hasOpenRealAutoPosition(bridge, state, cfg.symbol, cfg.maxOpenPositions)) {
+      return { message: "Jumlah posisi auto-trade real sudah mencapai batas maksimal." };
     }
-    return openRealPosition(state, bridge, { symbol: cfg.symbol, timeframe: cfg.timeframe }, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, cfg.mode);
+    return openRealPosition(state, bridge, { symbol: cfg.symbol, timeframe: cfg.timeframe }, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, cfg.mode, symbolQuote.contractSize);
   }
 
   return openPaperPosition(state, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, symbolQuote.contractSize);
 }
 
-async function hasOpenRealAutoPosition(bridge: string, state: AutoTradeState, symbol: string): Promise<boolean> {
+async function hasOpenRealAutoPosition(bridge: string, state: AutoTradeState, symbol: string, maxOpenPositions: number): Promise<boolean> {
   const positions = await fetchBridgePositions(bridge, symbol);
-  return positions.some((item) => item.magic === AUTO_MAGIC || String(item.ticket) === state.position?.ticket);
+  const autoPositions = positions.filter((item) => item.magic === AUTO_MAGIC || String(item.ticket) === state.position?.ticket);
+  return autoPositions.length >= Math.max(1, Math.floor(maxOpenPositions));
 }
 
 function openPaperPosition(state: AutoTradeState, entry: number, stopLoss: number, takeProfit: number, volume: number, riskAmount: number, direction: "LONG" | "SHORT", contractSize = 100) {
@@ -290,6 +295,7 @@ async function openRealPosition(
   riskAmount: number,
   direction: "LONG" | "SHORT",
   mode: AutoTradeMode,
+  contractSize: number,
 ) {
   const response = await fetch(`${bridge}/order`, {
     method: "POST",
@@ -338,7 +344,7 @@ async function openRealPosition(
     stopLoss,
     takeProfit,
     volume: toFinite(data.volume) ?? volume,
-    contractSize: 100,
+    contractSize,
     riskPerUnit: Math.abs(price - stopLoss),
     riskAmount,
     openedAt: new Date().toISOString(),

@@ -26,7 +26,11 @@ export async function getCurrentUserId(): Promise<string | null> {
     return null;
   }
 
-  await ensureLocalUser(localId);
+  try {
+    await ensureLocalUser(localId);
+  } catch {
+    // DB tidak tersedia — pakai local id sebagai identitas tanpa seed.
+  }
   return localId;
 }
 
@@ -36,5 +40,9 @@ async function ensureLocalUser(id: string): Promise<void> {
     return;
   }
 
-  await db.insert(users).values({ id, email: LOCAL_USER_EMAIL }).onConflictDoNothing();
+  try {
+    await db.insert(users).values({ id, email: LOCAL_USER_EMAIL }).onConflictDoNothing();
+  } catch {
+    // Insert gagal (koneksi DB seketika putus) — biarkan; bukan fatal.
+  }
 }
