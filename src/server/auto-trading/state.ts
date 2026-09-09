@@ -127,12 +127,14 @@ function loadFromDisk(): AutoTradeState {
 
 function normalizeState(raw: Partial<AutoTradeState>): AutoTradeState {
   const fallback = freshState();
+  const positions = Array.isArray(raw.positions) ? raw.positions : raw.position ? [raw.position] : [];
   return {
     ...fallback,
     ...raw,
     config: { ...AUTO_TRADE_DEFAULTS, ...(raw.config ?? {}) },
     paper: { ...fallback.paper, ...(raw.paper ?? {}) },
-    position: raw.position ?? null,
+    position: positions[0] ?? null,
+    positions,
     logs: Array.isArray(raw.logs) ? raw.logs : [],
     trades: Array.isArray(raw.trades) ? raw.trades : [],
   };
@@ -157,6 +159,7 @@ export function freshState(): AutoTradeState {
     status: "disabled",
     config: { ...AUTO_TRADE_DEFAULTS },
     position: null,
+    positions: [],
     paper: { balance: 10000, equity: 10000, realizedPnl: 0, trades: 0, wins: 0 },
     lastCycle: null,
     lastError: null,
@@ -186,6 +189,25 @@ export function recordAutoTrade(state: AutoTradeState, trade: AutoTradeClosedTra
 export function setPosition(state: AutoTradeState, position: AutoTradePosition | null) {
   state.position = position;
   state.status = position ? "position_open" : "enabled";
+}
+
+export function syncPositionMirror(state: AutoTradeState) {
+  state.position = state.positions[0] ?? null;
+  state.status = state.positions.length > 0 ? "position_open" : "enabled";
+}
+
+export function addTrackedPosition(state: AutoTradeState, position: AutoTradePosition) {
+  state.positions = [...state.positions, position];
+  syncPositionMirror(state);
+}
+
+export function removeTrackedPosition(state: AutoTradeState, ticket: string) {
+  state.positions = state.positions.filter((item) => item.ticket !== ticket);
+  syncPositionMirror(state);
+}
+
+export function getTrackedPositions(state: AutoTradeState): AutoTradePosition[] {
+  return state.positions;
 }
 
 export function roundTo(value: number, digits = 4): number {

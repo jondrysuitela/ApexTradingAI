@@ -1,10 +1,12 @@
 export type AutoTradeMode = "paper" | "demo" | "real";
 export type AutoTradeAction = "BUY" | "SELL";
 export type AutoTradeDirection = "AUTO" | "BUY" | "SELL";
+export type AutoTradeTradeMode = "single" | "multi";
 export type AutoTradeStatus = "disabled" | "enabled" | "position_open" | "error";
 
 export type AutoTradeConfig = {
   mode: AutoTradeMode;
+  tradeMode: AutoTradeTradeMode;
   symbol: string;
   timeframe: string;
   direction: AutoTradeDirection;
@@ -64,6 +66,7 @@ export type AutoTradeState = {
   status: AutoTradeStatus;
   config: AutoTradeConfig;
   position: AutoTradePosition | null;
+  positions: AutoTradePosition[];
   paper: {
     balance: number;
     equity: number;
@@ -80,6 +83,7 @@ export type AutoTradeState = {
 
 export const AUTO_TRADE_DEFAULTS: AutoTradeConfig = {
   mode: "paper",
+  tradeMode: "single",
   symbol: "XAUUSD",
   timeframe: "5m",
   direction: "AUTO",

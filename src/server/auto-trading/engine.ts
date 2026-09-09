@@ -4,7 +4,7 @@ import { getActiveBridgeUrl } from "@/server/market-data/bridges";
 import { getCandles, getTicker } from "@/server/market-data/service";
 import { getSpreadContext } from "@/server/market-data/symbol-context";
 import type { Timeframe } from "@/lib/timeframes";
-import { appendAutoTradeLog, flushPendingAutoTradeState, loadAutoTradeState, recordAutoTrade, roundTo, saveAutoTradeState, setPosition, syncAutoTradeStateFromDb } from "./state";
+import { addTrackedPosition, appendAutoTradeLog, flushPendingAutoTradeState, getTrackedPositions, loadAutoTradeState, recordAutoTrade, removeTrackedPosition, roundTo, saveAutoTradeState, syncAutoTradeStateFromDb } from "./state";
 import { computeRiskLevels, resolveDirection, sizeFixedLot, sizeVolume, type SymbolSizingInfo } from "./risk";
 import { evaluateEntry, evaluatePaperExit } from "./decision";
 import { entryMinimums } from "@/server/technical/strictness";
@@ -48,28 +48,30 @@ async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
   }
 
   try {
-    if (state.position) {
-      const closed = await manageOpenPosition(state, bridge);
-      state.status = state.position ? "position_open" : "enabled";
-      state.lastError = null;
-      state.lastCycle = {
-        at: new Date().toISOString(),
-        message: closed || !state.position
-          ? "Posisi auto-trade ditutup (TP/SL)."
-          : `Posisi ${state.position.action} dipantau (last ${state.position.lastPrice?.toFixed(5) ?? "n/a"}).`,
-      };
-      saveAutoTradeState(state);
-      void flushPendingAutoTradeState();
-      return { cycled: true, message: closed ? "Posisi auto-trade ditutup." : "Posisi masih terbuka — dipantau." };
+    const managedClosed = await manageTrackedPositions(state, bridge);
+    const positions = getTrackedPositions(state);
+    const effectiveMax = state.config.tradeMode === "multi" ? Math.max(1, Math.floor(state.config.maxOpenPositions)) : 1;
+    const openCount = state.config.mode === "paper" ? positions.length : await countRealAutoPositions(bridge);
+
+    let message: string;
+    if (openCount >= effectiveMax) {
+      message =
+        state.config.tradeMode === "multi"
+          ? `${openCount}/${effectiveMax} posisi berjalan — menunggu slot kosong.`
+          : managedClosed || positions.length === 0
+            ? "Posisi auto-trade ditutup (TP/SL)."
+            : `Posisi ${positions[0]?.action ?? "?"} dipantau (last ${positions[0]?.lastPrice?.toFixed(5) ?? "n/a"}).`;
+    } else {
+      const opened = await evaluateAndOpen(state, bridge);
+      message = opened.message;
     }
 
-    const opened = await evaluateAndOpen(state, bridge);
-    state.status = state.position ? "position_open" : "enabled";
+    state.status = getTrackedPositions(state).length > 0 ? "position_open" : "enabled";
     state.lastError = null;
-    state.lastCycle = { at: new Date().toISOString(), message: opened.message };
+    state.lastCycle = { at: new Date().toISOString(), message };
     saveAutoTradeState(state);
     void flushPendingAutoTradeState();
-    return { cycled: true, message: opened.message };
+    return { cycled: true, message };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     appendAutoTradeLog(state, "error", `Cycle error: ${message}`);
@@ -127,45 +129,92 @@ async function fetchAccountEquity(bridge: string): Promise<{ equity: number; bal
   };
 }
 
-async function manageOpenPosition(state: AutoTradeState, bridge: string): Promise<boolean> {
-  const position = state.position;
-  if (!position) return false;
+async function manageTrackedPositions(state: AutoTradeState, bridge: string): Promise<boolean> {
+  const positions = getTrackedPositions(state);
+  if (positions.length === 0) return false;
 
-  let price: number | null = null;
-  try {
-    price = (await getTicker(position.symbol)).price;
-  } catch {
-    price = null;
+  const realMode = state.config.mode !== "paper";
+  if (!realMode) {
+    let closedAny = false;
+    for (const position of [...positions]) {
+      if (!state.positions.some((item) => item.ticket === position.ticket)) continue;
+      let price: number | null = null;
+      try {
+        price = (await getTicker(position.symbol)).price;
+      } catch {
+        price = null;
+      }
+      if (price === null) {
+        appendAutoTradeLog(state, "warn", `Ticker tidak tersedia untuk cek SL/TP paper (${position.symbol}).`);
+        continue;
+      }
+      position.lastPrice = price;
+      const exitReason = evaluatePaperExit(position, price);
+      if (exitReason) {
+        closeTrackedPosition(state, position, price, exitReason);
+        closedAny = true;
+      }
+    }
+    return closedAny;
   }
 
-  if (position.mode === "paper") {
-    if (price === null) {
-      appendAutoTradeLog(state, "warn", "Ticker tidak tersedia untuk cek SL/TP paper.");
-      return false;
-    }
-    position.lastPrice = price;
-    const exitReason = evaluatePaperExit(position, price);
-    if (exitReason) {
-      return closePaperPosition(state, position, price, exitReason);
-    }
-    return false;
-  }
+  const livePositions = await fetchBridgePositions(bridge, "");
+  const byTicket = new Map(livePositions.map((item) => [String(item.ticket), item]));
+  let closedAny = false;
 
-  const positions = await fetchBridgePositions(bridge, position.symbol);
-  const live = positions.find((item) => String(item.ticket) === position.ticket);
-  position.lastPrice = live ? Number(live.priceCurrent ?? position.lastPrice) : position.lastPrice ?? null;
-
-  if (live) {
+  for (const position of [...positions]) {
+    if (!state.positions.some((item) => item.ticket === position.ticket)) continue;
+    const live = byTicket.get(position.ticket);
+    if (!live) {
+      const lastPrice = position.lastPrice;
+      const exitReason = lastPrice !== null ? (evaluatePaperExit(position, lastPrice) ?? "MANUAL") : "MANUAL";
+      const exitPrice = lastPrice ?? position.entryPrice;
+      closeTrackedPosition(state, position, exitPrice, exitReason);
+      closedAny = true;
+      continue;
+    }
+    position.lastPrice = toFinite(live.priceCurrent) ?? position.lastPrice;
+    position.stopLoss = toFinite(live.sl) ?? position.stopLoss;
+    position.takeProfit = toFinite(live.tp) ?? position.takeProfit;
     const unrealized = computeRealizedPnl(position.action, position.entryPrice, position.lastPrice ?? position.entryPrice, position.volume, position.contractSize);
-    const rMultiple = (position.lastPrice ?? position.entryPrice) - position.entryPrice === 0 ? 0 : computeR(position, position.lastPrice ?? position.entryPrice);
-    appendAutoTradeLog(state, "info", `Posisi real ${position.action} volume ${position.volume} berjalan (unrealized ${roundTo(unrealized, 2)}, ${rMultiple.toFixed(2)}R).`);
-    return false;
+    const rMultiple = computeR(position, position.lastPrice ?? position.entryPrice);
+    appendAutoTradeLog(state, "info", `Posisi real ${live.typeLabel} ${position.volume} (${position.symbol}) berjalan (unrealized ${roundTo(unrealized, 2)}, ${rMultiple.toFixed(2)}R).`);
   }
 
-  const lastPrice = position.lastPrice;
-  const exitReason = lastPrice !== null ? (evaluatePaperExit(position, lastPrice) ?? "MANUAL") : "MANUAL";
-  const exitPrice = lastPrice ?? position.entryPrice;
-  return closeTrackedPosition(state, position, exitPrice, exitReason);
+  for (const live of livePositions) {
+    if (live.magic !== AUTO_MAGIC) continue;
+    if (state.positions.some((item) => String(item.ticket) === String(live.ticket))) continue;
+    const adopted = await adoptBridgePosition(state, bridge, live);
+    if (adopted) {
+      addTrackedPosition(state, adopted);
+      appendAutoTradeLog(state, "info", `Posisi real ${live.typeLabel} ${adopted.symbol} (${adopted.ticket}) diadopsi untuk dipantau.`);
+    }
+  }
+  return closedAny;
+}
+
+async function adoptBridgePosition(state: AutoTradeState, bridge: string, live: BridgePosition): Promise<AutoTradePosition | null> {
+  try {
+    const quote = await fetchSymbolQuote(bridge, live.symbol);
+    return {
+      ticket: String(live.ticket),
+      mode: state.config.mode,
+      symbol: live.symbol,
+      timeframe: state.config.timeframe,
+      action: live.type === 0 ? "BUY" : "SELL",
+      entryPrice: live.priceOpen,
+      stopLoss: live.sl ?? 0,
+      takeProfit: live.tp ?? 0,
+      volume: live.volume,
+      contractSize: quote.contractSize,
+      riskPerUnit: Math.abs(live.priceOpen - (live.sl ?? live.priceOpen)),
+      riskAmount: 0,
+      openedAt: new Date().toISOString(),
+      lastPrice: live.priceCurrent,
+    };
+  } catch {
+    return null;
+  }
 }
 
 type SymbolCandidateEvaluation =
@@ -302,19 +351,27 @@ async function openEvaluatedEntry(state: AutoTradeState, bridge: string, cfg: Au
         return { message: msg };
       }
     }
-    if (await hasOpenRealAutoPosition(bridge, state, symbol, cfg.maxOpenPositions, cfg.symbol === AUTO_MARKET_SYMBOL)) {
-      return { message: "Jumlah posisi auto-trade real sudah mencapai batas maksimal." };
+    if (await hasReachedPositionLimit(cfg, state, bridge)) {
+      return { message: cfg.tradeMode === "multi" ? "Jumlah posisi auto-trade sudah mencapai batas (multi)." : "Jumlah posisi auto-trade real sudah mencapai batas maksimal." };
     }
     return openRealPosition(state, bridge, { symbol, timeframe: cfg.timeframe }, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, cfg.mode, symbolQuote.contractSize);
   }
 
+  if (state.positions.length >= (cfg.tradeMode === "multi" ? Math.max(1, Math.floor(cfg.maxOpenPositions)) : 1)) {
+    return { message: cfg.tradeMode === "multi" ? "Jumlah posisi auto-trade sudah mencapai batas (multi)." : "Jumlah posisi auto-trade sudah mencapai batas maksimal." };
+  }
   return openPaperPosition(state, entry, stopLoss, takeProfit, sizing.volume, sizing.riskAmount, direction, symbolQuote.contractSize, symbol);
 }
 
-async function hasOpenRealAutoPosition(bridge: string, state: AutoTradeState, symbol: string, maxOpenPositions: number, countAll = false): Promise<boolean> {
-  const positions = await fetchBridgePositions(bridge, countAll ? "" : symbol);
-  const autoPositions = positions.filter((item) => item.magic === AUTO_MAGIC || String(item.ticket) === state.position?.ticket);
-  return autoPositions.length >= Math.max(1, Math.floor(maxOpenPositions));
+async function hasReachedPositionLimit(cfg: AutoTradeState["config"], state: AutoTradeState, bridge: string): Promise<boolean> {
+  const effectiveMax = cfg.tradeMode === "multi" ? Math.max(1, Math.floor(cfg.maxOpenPositions)) : 1;
+  const openCount = cfg.mode === "paper" ? state.positions.length : await countRealAutoPositions(bridge);
+  return openCount >= effectiveMax;
+}
+
+async function countRealAutoPositions(bridge: string): Promise<number> {
+  const positions = await fetchBridgePositions(bridge, "");
+  return positions.filter((item) => item.magic === AUTO_MAGIC).length;
 }
 
 function openPaperPosition(state: AutoTradeState, entry: number, stopLoss: number, takeProfit: number, volume: number, riskAmount: number, direction: "LONG" | "SHORT", contractSize = 100, symbol = state.config.symbol) {
@@ -334,7 +391,7 @@ function openPaperPosition(state: AutoTradeState, entry: number, stopLoss: numbe
     openedAt: new Date().toISOString(),
     lastPrice: entry,
   };
-  setPosition(state, position);
+  addTrackedPosition(state, position);
   appendAutoTradeLog(state, "trade", `Paper ${direction} ${volume} @ ${entry.toFixed(5)} (SL ${stopLoss.toFixed(5)}, TP ${takeProfit.toFixed(5)}, risiko $${roundTo(riskAmount, 2)}).`);
   return { message: `${direction} paper dibuka @ ${entry.toFixed(5)} — SL ${stopLoss.toFixed(5)}, TP ${takeProfit.toFixed(5)}.` };
 }
@@ -405,15 +462,10 @@ async function openRealPosition(
     openedAt: new Date().toISOString(),
     lastPrice: price,
   };
-  setPosition(state, position);
+  addTrackedPosition(state, position);
   appendAutoTradeLog(state, "trade", `Real ${direction} ${position.volume} ticket ${ticket} @ ${price.toFixed(5)} (SL ${stopLoss.toFixed(5)}, TP ${takeProfit.toFixed(5)}, risiko $${roundTo(riskAmount, 2)}).`);
 
   return { message: `${direction} real (${ticket}) @ ${price.toFixed(5)} — SL ${stopLoss.toFixed(5)}, TP ${takeProfit.toFixed(5)}.` };
-}
-
-function closePaperPosition(state: AutoTradeState, position: AutoTradePosition, price: number, exitReason: "TP" | "SL"): boolean {
-  closeTrackedPosition(state, position, price, exitReason);
-  return true;
 }
 
 function closeTrackedPosition(state: AutoTradeState, position: AutoTradePosition, exitPrice: number, exitReason: "TP" | "SL" | "MANUAL") {
@@ -439,8 +491,8 @@ function closeTrackedPosition(state: AutoTradeState, position: AutoTradePosition
     closedAt,
   };
   recordAutoTrade(state, trade);
-  appendAutoTradeLog(state, "trade", `Closed ${position.action} @ ${exitPrice.toFixed(5)} (${exitReason}) → ${rMultiple >= 0 ? "+" : ""}${rMultiple.toFixed(2)}R, PnL $${roundTo(realizedPnl, 2)}.`);
-  setPosition(state, null);
+  appendAutoTradeLog(state, "trade", `Closed ${position.action} ${position.symbol} @ ${exitPrice.toFixed(5)} (${exitReason}) → ${rMultiple >= 0 ? "+" : ""}${rMultiple.toFixed(2)}R, PnL $${roundTo(realizedPnl, 2)}.`);
+  removeTrackedPosition(state, position.ticket);
   return true;
 }
 
@@ -458,42 +510,59 @@ export function computeRealizedPnl(action: "BUY" | "SELL", entry: number, exitPr
 export async function forceCloseAutoTrade(): Promise<{ closed: boolean; message: string }> {
   await syncAutoTradeStateFromDb();
   const state = loadAutoTradeState();
-  if (!state.position) {
+  const positions = getTrackedPositions(state);
+  if (positions.length === 0) {
     return { closed: false, message: "Tidak ada posisi auto-trade untuk ditutup." };
   }
-  const position = state.position;
   const bridge = getActiveBridgeUrl() ?? "";
-  if (position.mode === "paper") {
-    let price: number;
-    try {
-      price = (await getTicker(position.symbol)).price;
-    } catch {
-      price = position.lastPrice ?? position.entryPrice;
+  const realMode = positions[0].mode !== "paper";
+  let closedCount = 0;
+  let lastError: string | null = null;
+
+  if (!realMode) {
+    for (const position of [...positions]) {
+      if (!state.positions.some((item) => item.ticket === position.ticket)) continue;
+      let price: number;
+      try {
+        price = (await getTicker(position.symbol)).price;
+      } catch {
+        price = position.lastPrice ?? position.entryPrice;
+      }
+      closeTrackedPosition(state, position, price, "MANUAL");
+      closedCount += 1;
     }
-    closeTrackedPosition(state, position, price, "MANUAL");
-    state.lastCycle = { at: new Date().toISOString(), message: "Posisi paper ditutup manual." };
-    saveAutoTradeState(state);
-    await flushPendingAutoTradeState();
-    return { closed: true, message: `Paper ${position.action} ditutup manual @ ${price.toFixed(5)}.` };
+  } else {
+    for (const position of [...positions]) {
+      if (!state.positions.some((item) => item.ticket === position.ticket)) continue;
+      const response = await fetch(`${bridge}/close`, {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ticket: Number(position.ticket), deviation: 20 }),
+      });
+      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!response.ok || data.filled !== true) {
+        const label = String(data.retcodeLabel ?? data.detail ?? "rejected");
+        lastError = `Tutup posisi real ${position.ticket} gagal: ${label}`;
+        appendAutoTradeLog(state, "error", lastError);
+        continue;
+      }
+      const price = toFinite(data.price) ?? position.lastPrice ?? position.entryPrice;
+      closeTrackedPosition(state, position, price, "MANUAL");
+      closedCount += 1;
+    }
   }
 
-  const response = await fetch(`${bridge}/close`, {
-    method: "POST",
-    cache: "no-store",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ticket: Number(position.ticket), deviation: 20 }),
-  });
-  const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!response.ok || data.filled !== true) {
-    const label = String(data.retcodeLabel ?? data.detail ?? "rejected");
-    throw new AppError(`Tutup posisi real gagal: ${label}`, 400, "BRIDGE_ORDER_REJECTED");
+  if (closedCount === 0) {
+    throw new AppError(lastError ?? "Semua posisi gagal ditutup.", 400, "BRIDGE_ORDER_REJECTED");
   }
-  const price = toFinite(data.price) ?? position.lastPrice ?? position.entryPrice;
-  closeTrackedPosition(state, position, price, "MANUAL");
-  state.lastCycle = { at: new Date().toISOString(), message: "Posisi real ditutup manual." };
+  state.lastCycle = {
+    at: new Date().toISOString(),
+    message: closedCount > 1 ? `${closedCount} posisi ditutup manual.` : `Posisi ${positions[0].action} ditutup manual.`,
+  };
   saveAutoTradeState(state);
   await flushPendingAutoTradeState();
-  return { closed: true, message: `Real ${position.action} (${position.ticket}) ditutup @ ${price.toFixed(5)}.` };
+  return { closed: true, message: closedCount > 1 ? `${closedCount} posisi ditutup manual.` : `Posisi ${positions[0].action} (${positions[0].ticket}) ditutup @ ${positions[0].lastPrice?.toFixed(5) ?? "n/a"}.` };
 }
 
 type BridgePosition = { ticket: number; symbol: string; type: number; typeLabel: string; volume: number; priceOpen: number; priceCurrent: number; sl: number | null; tp: number | null; profit: number; magic: number; comment: string };

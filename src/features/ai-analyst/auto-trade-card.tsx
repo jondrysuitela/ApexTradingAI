@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 import { appTokenHeaders } from "@/lib/app-token";
@@ -16,6 +16,7 @@ type AutoTradeStatus = {
   status: string;
   config: {
     mode: "paper" | "demo" | "real";
+    tradeMode: "single" | "multi";
     symbol: string;
     timeframe: string;
     direction: "AUTO" | "BUY" | "SELL";
@@ -31,6 +32,7 @@ type AutoTradeStatus = {
   account: { login: number | null; server: string | null; currency: string | null; accountType: string | null; tradeAllowed: boolean; balance: number | null; equity: number | null } | null;
   accountConflict: boolean | null;
   position: {
+    ticket: string;
     action: "BUY" | "SELL";
     entryPrice: number;
     stopLoss: number;
@@ -41,6 +43,19 @@ type AutoTradeStatus = {
     mode: string;
     openedAt: string;
   } | null;
+  positions: Array<{
+    ticket: string;
+    action: "BUY" | "SELL";
+    symbol: string;
+    entryPrice: number;
+    stopLoss: number;
+    takeProfit: number;
+    volume: number;
+    riskPerUnit: number;
+    lastPrice: number | null;
+    mode: string;
+    openedAt: string;
+  }>;
   stats: { trades: number; wins: number; winRate: number; realizedPnl: number; balance: number; equity: number };
   lastCycle: { at: string; message: string } | null;
   lastError: string | null;
@@ -56,7 +71,8 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
 
   const position = data?.position ?? null;
   const stats = data?.stats ?? null;
-  const sideColor = position?.action === "BUY" ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300" : "border-red-400/40 bg-red-500/20 text-red-300";
+  const multi = (data?.config?.tradeMode ?? "single") === "multi";
+  const openPositions = multi && data?.positions?.length ? data.positions : position ? [position] : [];
 
   const configSymbol = data?.config?.symbol ?? workspaceSymbol;
   const configTimeframe = data?.config?.timeframe ?? workspaceTimeframe;
@@ -64,12 +80,12 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
 
   useEffect(() => {
     if (!data?.config || !workspaceSymbol || busy) return;
-    if (data.position) return;
+    if (data.position || (data.positions?.length ?? 0) > 0) return;
     if (configSymbol === "AUTO" || configSymbol.toUpperCase() === workspaceSymbol.toUpperCase()) return;
     if (!data.enabled) {
       void post({ action: "config", symbol: workspaceSymbol });
     }
-  }, [workspaceSymbol, configSymbol, data?.position, data?.enabled]);
+  }, [workspaceSymbol, configSymbol, data?.position, data?.positions?.length, data?.enabled]);
 
   const baseSymbols = brokerSymbols.length > 0 ? brokerSymbols : ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "USDIDR", "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD", "SPX", "IXIC"];
   const symbolOptions = [
@@ -80,19 +96,6 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
   const slSizes = [0.5, 0.75, 1, 1.5, 2, 3];
   const targets = [2, 3, 5, 8, 12];
   const lots = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1];
-
-  const unrealized = useMemo(() => {
-    if (!position || position.lastPrice === null) return null;
-    const signed = position.action === "BUY" ? 1 : -1;
-    return (position.lastPrice - position.entryPrice) * position.volume * 100 * signed;
-  }, [position]);
-
-  const rMultiple = useMemo(() => {
-    if (!position || position.lastPrice === null || position.riskPerUnit <= 0) return null;
-    return position.action === "BUY"
-      ? (position.lastPrice - position.entryPrice) / position.riskPerUnit
-      : (position.entryPrice - position.lastPrice) / position.riskPerUnit;
-  }, [position]);
 
   async function post(payload: Record<string, unknown>) {
     setBusy(true);
@@ -124,13 +127,25 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         <span
           className={`rounded-full border px-3 py-1 text-xs font-semibold ${
             data?.enabled
-              ? position
-                ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
-                : "border-cyan-400/40 bg-cyan-500/20 text-cyan-200"
+              ? multi
+                ? openPositions.length > 0
+                  ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
+                  : "border-cyan-400/40 bg-cyan-500/20 text-cyan-200"
+                : position
+                  ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300"
+                  : "border-cyan-400/40 bg-cyan-500/20 text-cyan-200"
               : "border-white/10 bg-slate-950/50 text-slate-400"
           }`}
         >
-          {data?.enabled ? (position ? `POSISI ${position.action} TERBUKA` : "RUNNING") : "OFF"}
+          {data?.enabled
+            ? multi
+              ? openPositions.length > 0
+                ? `${openPositions.length} POSISI BERJALAN`
+                : "RUNNING"
+              : position
+                ? `POSISI ${position.action} TERBUKA`
+                : "RUNNING"
+            : "OFF"}
         </span>
       </div>
 
@@ -154,6 +169,18 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
             <option value="paper" className="bg-slate-950">Paper (virtual)</option>
             <option value="demo" className="bg-slate-950">Akun Demo</option>
             <option value="real" className="bg-slate-950">Real (uang asli)</option>
+          </select>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Mode Trade</div>
+          <select
+            value={data?.config?.tradeMode ?? "single"}
+            onChange={(event) => post({ action: "config", tradeMode: event.target.value })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
+          >
+            <option value="single" className="bg-slate-950">Single (1 posisi)</option>
+            <option value="multi" className="bg-slate-950">Multi (max {data?.config?.maxOpenPositions ?? 1})</option>
           </select>
         </div>
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
@@ -251,37 +278,14 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         <div className="mt-2 rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-600">Terminal MT5 tidak terdeteksi — hanya mode paper berjalan.</div>
       )}
 
-      {position ? (
-        <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-sm">
-          <div className="flex items-center justify-between">
-            <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${sideColor}`}>{position.action}</span>
-            <span className="text-xs text-slate-400">
-              {position.mode.toUpperCase()} vol {position.volume} · {new Date(position.openedAt).toLocaleString("id-ID")}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="text-slate-400">
-              Entry <span className="block font-mono text-cyan-100">{position.entryPrice.toFixed(5)}</span>
-            </div>
-            <div className="text-slate-400">
-              Last <span className="block font-mono text-cyan-100">{position.lastPrice !== null ? position.lastPrice.toFixed(5) : "—"}</span>
-            </div>
-            <div className="text-slate-400">
-              SL <span className="block font-mono text-red-300">{position.stopLoss.toFixed(5)}</span>
-            </div>
-            <div className="text-slate-400">
-              TP <span className="block font-mono text-emerald-300">{position.takeProfit.toFixed(5)}</span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">
-              Unrealized: <span className={unrealized !== null && unrealized >= 0 ? "text-emerald-300" : "text-red-300"}>{unrealized !== null ? `$${unrealized.toFixed(2)}` : "—"}</span>
-            </span>
-            <span className="text-slate-400">
-              R: <span className={rMultiple !== null && rMultiple >= 0 ? "text-emerald-300" : "text-red-300"}>{rMultiple !== null ? `${rMultiple >= 0 ? "+" : ""}${rMultiple.toFixed(2)}R` : "—"}</span>
-            </span>
-          </div>
+      {multi && openPositions.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {openPositions.map((item, index) => (
+            <PositionCard key={`${item.ticket}-${index}`} position={item} />
+          ))}
         </div>
+      ) : position ? (
+        <PositionCard position={position} />
       ) : (
         <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-xs text-slate-500">
           {data?.enabled
@@ -321,7 +325,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
           <button disabled={busy} onClick={() => post({ action: "run-now" })} className="rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm hover:bg-slate-950/80 disabled:opacity-50">
             Run Now
           </button>
-          <button disabled={busy || !position} onClick={() => post({ action: "close" })} className="rounded-xl border border-yellow-400/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200 hover:bg-yellow-500/20 disabled:opacity-40">
+          <button disabled={busy || openPositions.length === 0} onClick={() => post({ action: "close" })} className="rounded-xl border border-yellow-400/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-200 hover:bg-yellow-500/20 disabled:opacity-40">
             Close
           </button>
         </div>
@@ -337,9 +341,55 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         {!data?.logs?.length ? <div className="text-slate-600">Belum ada log. {isLoading ? "Menyambung..." : "Loop: " + (data?.loop?.running ? "aktif" : "mati")}</div> : null}
       </div>
       <div className="mt-2 text-[11px] text-slate-600">
-        Loop interval {(data?.config?.loopIntervalMs ?? 15000) / 1000}s · SL dari ATR × {(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} · TP {(data?.config?.tpRiskReward ?? 5).toFixed(0)}× risiko · max {data?.config?.maxOpenPositions ?? 1} posisi.
+        Loop interval {(data?.config?.loopIntervalMs ?? 15000) / 1000}s · SL dari ATR × {(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} · TP {(data?.config?.tpRiskReward ?? 5).toFixed(0)}× risiko · trade {(data?.config?.tradeMode ?? "single").toUpperCase()} · max {data?.config?.maxOpenPositions ?? 1} posisi.
       </div>
     </Card>
+  );
+}
+
+function PositionCard({ position }: { position: { action: "BUY" | "SELL"; symbol?: string; entryPrice: number; stopLoss: number; takeProfit: number; volume: number; riskPerUnit: number; lastPrice: number | null; mode: string; openedAt: string } }) {
+  const sideColor = position.action === "BUY" ? "border-emerald-400/40 bg-emerald-500/20 text-emerald-300" : "border-red-400/40 bg-red-500/20 text-red-300";
+  const unrealized = position.lastPrice !== null ? (position.lastPrice - position.entryPrice) * position.volume * 100 * (position.action === "BUY" ? 1 : -1) : null;
+  const rMultiple = position.lastPrice !== null && position.riskPerUnit > 0
+    ? position.action === "BUY"
+      ? (position.lastPrice - position.entryPrice) / position.riskPerUnit
+      : (position.entryPrice - position.lastPrice) / position.riskPerUnit
+    : null;
+
+  return (
+    <div className="space-y-2 rounded-xl border border-white/10 bg-slate-950/40 p-3 text-sm">
+      <div className="flex items-center justify-between">
+        <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${sideColor}`}>
+          {position.action}
+          {position.symbol ? ` · ${position.symbol}` : ""}
+        </span>
+        <span className="text-xs text-slate-400">
+          {position.mode.toUpperCase()} vol {position.volume} · {new Date(position.openedAt).toLocaleString("id-ID")}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="text-slate-400">
+          Entry <span className="block font-mono text-cyan-100">{position.entryPrice.toFixed(5)}</span>
+        </div>
+        <div className="text-slate-400">
+          Last <span className="block font-mono text-cyan-100">{position.lastPrice !== null ? position.lastPrice.toFixed(5) : "—"}</span>
+        </div>
+        <div className="text-slate-400">
+          SL <span className="block font-mono text-red-300">{position.stopLoss.toFixed(5)}</span>
+        </div>
+        <div className="text-slate-400">
+          TP <span className="block font-mono text-emerald-300">{position.takeProfit.toFixed(5)}</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-400">
+          Unrealized: <span className={unrealized !== null && unrealized >= 0 ? "text-emerald-300" : "text-red-300"}>{unrealized !== null ? `$${unrealized.toFixed(2)}` : "—"}</span>
+        </span>
+        <span className="text-slate-400">
+          R: <span className={rMultiple !== null && rMultiple >= 0 ? "text-emerald-300" : "text-red-300"}>{rMultiple !== null ? `${rMultiple >= 0 ? "+" : ""}${rMultiple.toFixed(2)}R` : "—"}</span>
+        </span>
+      </div>
+    </div>
   );
 }
 

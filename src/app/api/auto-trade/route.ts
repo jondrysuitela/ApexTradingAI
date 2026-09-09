@@ -73,6 +73,7 @@ export async function POST(request: Request) {
 function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
   if (typeof body.mode === "string" && (body.mode === "paper" || body.mode === "demo" || body.mode === "real")) patch.mode = body.mode;
+  if (typeof body.tradeMode === "string" && (body.tradeMode === "single" || body.tradeMode === "multi")) patch.tradeMode = body.tradeMode;
   if (typeof body.direction === "string" && (body.direction === "AUTO" || body.direction === "BUY" || body.direction === "SELL")) patch.direction = body.direction;
   if (typeof body.symbol === "string" && /^[A-Za-z0-9_.=^-]+$/.test(body.symbol)) patch.symbol = body.symbol.toUpperCase();
   if (typeof body.timeframe === "string" && ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"].includes(body.timeframe)) patch.timeframe = body.timeframe;
@@ -134,6 +135,7 @@ async function buildStatusBody(state = loadAutoTradeState()) {
     status: state.status,
     config: state.config,
     position: state.position,
+    positions: state.positions,
     paper: state.paper,
     account,
     accountConflict,
