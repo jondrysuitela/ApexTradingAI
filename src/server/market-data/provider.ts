@@ -1,10 +1,11 @@
-import { env } from "@/server/env";
 import type { MarketDataProvider } from "./types";
 import { MT5BridgeProvider } from "./providers/mt5";
+import { getActiveBridgeUrl, isBridgeConfigured } from "./bridges";
 
 export function getMarketDataProvider(_symbol?: string): MarketDataProvider | null {
-  if (env.MT5_BRIDGE_URL) {
-    return new MT5BridgeProvider(env.MT5_BRIDGE_URL);
+  const activeBridge = getActiveBridgeUrl();
+  if (isBridgeConfigured() && activeBridge) {
+    return new MT5BridgeProvider(activeBridge);
   }
 
   return null;

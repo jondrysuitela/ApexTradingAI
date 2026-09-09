@@ -1,4 +1,5 @@
 import { env } from "@/server/env";
+import { isBridgeConfigured } from "@/server/market-data/bridges";
 
 export function getReadinessStatus() {
   const authConfigured = Boolean(env.SUPABASE_URL && env.SUPABASE_ANON_KEY);
@@ -13,7 +14,7 @@ export function getReadinessStatus() {
       provider: env.MARKET_DATA_PROVIDER,
       baseUrlConfigured: Boolean(env.MARKET_DATA_BASE_URL),
       twelveDataConfigured: Boolean(env.TWELVE_DATA_API_KEY),
-      mt5BridgeConfigured: Boolean(env.MT5_BRIDGE_URL),
+      mt5BridgeConfigured: isBridgeConfigured(),
     },
     ai: {
       provider: aiProvider,

@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { env } from "@/server/env";
+import { checkApiToken } from "@/server/api-token";
+import { getActiveBridgeUrl, getConfiguredBridges, setActiveBridgeUrl } from "@/server/market-data/bridges";
 
 type BridgeSymbolStatus = { symbol: string; resolvedSymbol: string; available: boolean };
 type BridgeAccount = {
   login: number | null;
   name: string | null;
   server: string | null;
+  accountType: string | null;
   currency: string | null;
   balance: number | null;
   equity: number | null;
@@ -17,17 +19,49 @@ type BridgeAccount = {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const symbols = url.searchParams.get("symbols");
-  const bridgeUrl = env.MT5_BRIDGE_URL;
-  const bridgeStatus = bridgeUrl ? await fetchBridgeSymbols(bridgeUrl, symbols ?? undefined) : null;
-  const account = bridgeUrl ? await fetchBridgeAccount(bridgeUrl) : null;
+  return NextResponse.json(await buildBridgeStatus(symbols ?? undefined));
+}
 
-  return NextResponse.json({
-    configured: Boolean(bridgeUrl),
-    bridgeUrl: bridgeUrl ?? null,
-    status: bridgeStatus ? "ready" : bridgeUrl ? "not_connected" : "not_configured",
-    symbols: bridgeStatus?.symbols ?? [],
-    account,
-  });
+export async function POST(request: Request) {
+  const tokenCheck = checkApiToken(request);
+  if (!tokenCheck.allowed) {
+    return NextResponse.json({ error: "Token akses tidak valid", code: tokenCheck.reason }, { status: 401 });
+  }
+
+  const body = (await request.json().catch(() => ({}))) as { url?: string };
+  if (!body.url) {
+    return NextResponse.json({ error: "url bridge diperlukan", code: "BRIDGE_URL_REQUIRED" }, { status: 400 });
+  }
+
+  const chosen = setActiveBridgeUrl(body.url);
+  if (!chosen) {
+    return NextResponse.json({ error: "Bridge tidak terdaftar", code: "BRIDGE_NOT_REGISTERED" }, { status: 400 });
+  }
+
+  return NextResponse.json(await buildBridgeStatus());
+}
+
+async function buildBridgeStatus(symbols?: string) {
+  const active = getActiveBridgeUrl();
+  const configured = getConfiguredBridges();
+  const activeSymbols = active ? await fetchBridgeSymbols(active, symbols) : null;
+  const activeAccount = active ? await fetchBridgeAccount(active) : null;
+  const bridges = await Promise.all(
+    configured.map(async (url) => ({
+      url,
+      active: url === active,
+      account: await fetchBridgeAccount(url),
+    })),
+  );
+
+  return {
+    configured: configured.length > 0,
+    active,
+    bridges,
+    status: active && (activeSymbols || activeAccount) ? "ready" : configured.length > 0 ? "not_connected" : "not_configured",
+    symbols: activeSymbols?.symbols ?? [],
+    account: activeAccount,
+  };
 }
 
 async function fetchBridgeSymbols(bridgeUrl: string, symbols?: string) {

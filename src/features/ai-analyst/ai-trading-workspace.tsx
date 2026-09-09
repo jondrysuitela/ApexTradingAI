@@ -16,6 +16,7 @@ import { AutoTradeCard } from "@/features/ai-analyst/auto-trade-card";
 import { LivePositionsPanel } from "@/features/ai-analyst/live-positions-panel";
 import { AiAlertTicker } from "@/features/ai-analyst/ai-alert-ticker";
 import type { AlertContext } from "@/server/ai/alerts";
+import { appToken } from "@/lib/app-token";
 const fetcher = async (url: string) => {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -51,6 +52,7 @@ type Mt5Account = {
   login: number | null;
   name: string | null;
   server: string | null;
+  accountType: string | null;
   currency: string | null;
   balance: number | null;
   equity: number | null;
@@ -58,16 +60,42 @@ type Mt5Account = {
   leverage: number | null;
   tradeAllowed: boolean | null;
 };
-type Mt5Status = { status: string; symbols: Array<{ symbol: string; resolvedSymbol: string; available: boolean }>; account: Mt5Account | null };
+type Mt5Status = {
+  status: string;
+  active: string | null;
+  symbols: Array<{ symbol: string; resolvedSymbol: string; available: boolean }>;
+  account: Mt5Account | null;
+  bridges: Array<{ url: string; active: boolean; account: Mt5Account | null }>;
+};
 
 export function AiTradingWorkspace() {
   const [symbol, setSymbol] = useState("XAUUSD");
   const [timeframe, setTimeframe] = useState("5m");
   const [activeTab, setActiveTab] = useState<"analisis" | "about">("analisis");
   const [accountFlash, setAccountFlash] = useState<string | null>(null);
+  const [switchingBridge, setSwitchingBridge] = useState(false);
   const accountLoginRef = useRef<number | null>(null);
   const mt5Query = useSWR<Mt5Status>(`/api/market-data/mt5`, fetcher, { refreshInterval: 15000 });
   const mt5Symbols = mt5Query.data?.symbols ?? [];
+  const mt5Bridges = mt5Query.data?.bridges ?? [];
+  const activeBridgeUrl = mt5Query.data?.active ?? null;
+
+  const switchBridge = async (bridgeUrl: string) => {
+    if (bridgeUrl === activeBridgeUrl || switchingBridge) return;
+    setSwitchingBridge(true);
+    try {
+      const response = await fetch(`/api/market-data/mt5`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-app-token": appToken },
+        body: JSON.stringify({ url: bridgeUrl }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      accountLoginRef.current = null;
+      await Promise.all([mt5Query.mutate(), candlesQuery.mutate(), summaryQuery.mutate(), tickerQuery.mutate()]);
+    } finally {
+      setSwitchingBridge(false);
+    }
+  };
   const marketOptions = useMemo(() => {
     if (mt5Symbols.length === 0) {
       return [{ symbol, resolvedSymbol: symbol, available: false }];
@@ -151,6 +179,18 @@ export function AiTradingWorkspace() {
                 {marketOptions.map((item) => (
                   <option key={item.resolvedSymbol} value={item.resolvedSymbol}>
                     {item.resolvedSymbol} {item.available ? "- MT5" : "- not found"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm">
+              <span className="text-slate-400">Terminal (Akun MT5)</span>
+              <select value={activeBridgeUrl ?? ""} onChange={(event) => void switchBridge(event.target.value)} disabled={switchingBridge || mt5Bridges.length === 0} className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 outline-none">
+                {mt5Bridges.length === 0 && <option value="">Tidak ada bridge dikonfigurasi</option>}
+                {mt5Bridges.map((bridge) => (
+                  <option key={bridge.url} value={bridge.url}>
+                    {bridge.account?.login ? `${bridge.account.login}@${bridge.account.server ?? bridge.url}` : bridge.url}
+                    {bridge.account?.accountType ? ` (${bridge.account.accountType.toUpperCase()})` : " — offline"}
                   </option>
                 ))}
               </select>

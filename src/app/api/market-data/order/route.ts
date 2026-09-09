@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { env } from "@/server/env";
 import { checkApiToken } from "@/server/api-token";
+import { getActiveBridgeUrl } from "@/server/market-data/bridges";
 
 type OrderPayload = {
   symbol: string;
@@ -14,14 +14,15 @@ type OrderPayload = {
 };
 
 export async function GET(request: Request) {
-  if (!env.MT5_BRIDGE_URL) {
-    return NextResponse.json({ configured: false, status: "not_configured", account: null, symbol: null, errors: { bridge: "MT5_BRIDGE_URL is not configured" } });
+  const bridge = getActiveBridgeUrl();
+  if (!bridge) {
+    return NextResponse.json({ configured: false, status: "not_configured", account: null, symbol: null, errors: { bridge: "MT5 bridge is not configured" } });
   }
 
   const url = new URL(request.url);
   const symbol = encodeURIComponent(url.searchParams.get("symbol") ?? "XAUUSD");
 
-  const [account, symbolResult] = await Promise.all([fetchJson(`${env.MT5_BRIDGE_URL}/account`), fetchJson(`${env.MT5_BRIDGE_URL}/symbol?symbol=${symbol}`)]);
+  const [account, symbolResult] = await Promise.all([fetchJson(`${bridge}/account`), fetchJson(`${bridge}/symbol?symbol=${symbol}`)]);
 
   const errors: Record<string, string> = {};
   if (!account.ok) errors.account = `${account.status}: ${account.error}`;
@@ -46,7 +47,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Token akses tidak valid", code: tokenCheck.reason }, { status: 401 });
   }
 
-  if (!env.MT5_BRIDGE_URL) {
+  const bridge = getActiveBridgeUrl();
+  if (!bridge) {
     return NextResponse.json({ error: "MT5 bridge is not configured", code: "BRIDGE_NOT_CONFIGURED" }, { status: 503 });
   }
 
@@ -71,7 +73,7 @@ export async function POST(request: Request) {
   if (typeof body.comment === "string" && body.comment.trim()) payload.comment = body.comment.trim().slice(0, 64);
 
   try {
-    const response = await fetch(`${env.MT5_BRIDGE_URL}/order`, {
+    const response = await fetch(`${bridge}/order`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),

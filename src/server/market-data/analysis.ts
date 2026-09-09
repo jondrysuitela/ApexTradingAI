@@ -6,8 +6,8 @@ import { computeConfluence } from "@/server/technical/confluence";
 import { detectStructure } from "@/server/technical/structure";
 import { detectSupportResistance } from "@/server/technical/support-resistance";
 import type { Timeframe } from "@/lib/timeframes";
-import { env } from "@/server/env";
 import { getCandlesForTimeframes } from "./service";
+import { getActiveBridgeUrl } from "./bridges";
 import { getSpreadContext, type SpreadContext } from "./symbol-context";
 
 const CONFIRMATION_TIMEFRAMES: Timeframe[] = ["5m", "15m", "1h"];
@@ -54,7 +54,7 @@ export function analyzeMarket(symbol: string, timeframe: string, candles: Candle
 export async function analyzeMarketWithConfirmation(symbol: string, timeframe: Timeframe, limit: number): Promise<ReturnType<typeof analyzeMarket> & { confirmations: TimeframeConfirmation[]; multiTimeframe: MultiTimeframeAlignment }> {
   const fetchTimeframes = Array.from(new Set<Timeframe>([timeframe, ...CONFIRMATION_TIMEFRAMES]));
   const candlesByTimeframe = await getCandlesForTimeframes(symbol, fetchTimeframes, limit);
-  const spread = await getSpreadContext(symbol, env.MT5_BRIDGE_URL);
+  const spread = await getSpreadContext(symbol, getActiveBridgeUrl() ?? undefined);
   const primary = analyzeMarket(symbol, timeframe, candlesByTimeframe[timeframe] ?? [], spread);
   const confirmations = CONFIRMATION_TIMEFRAMES.map((tf) => summarizeTimeframe(tf, candlesByTimeframe[tf] ?? [], spread));
   const longVotes = confirmations.filter((item) => item.bias === "LONG").length;

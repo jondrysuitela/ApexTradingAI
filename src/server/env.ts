@@ -10,6 +10,7 @@ const schema = z.object({
   MARKET_DATA_BASE_URL: z.string().default("https://api.binance.com"),
   TWELVE_DATA_API_KEY: z.string().optional(),
   MT5_BRIDGE_URL: z.string().optional(),
+  MT5_BRIDGES: z.string().optional(),
   AI_PROVIDER: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),

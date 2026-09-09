@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { handleApiError } from "@/server/errors";
 import { checkApiToken } from "@/server/api-token";
-
-const MT5_BRIDGE_URL = process.env.MT5_BRIDGE_URL ?? "http://127.0.0.1:8787";
+import { getActiveBridgeUrl } from "@/server/market-data/bridges";
 
 async function fetchJson(path: string, init?: RequestInit) {
+  const bridge = getActiveBridgeUrl();
+  if (!bridge) {
+    return { ok: false, status: 0, data: { detail: "MT5 bridge tidak dikonfigurasi" } };
+  }
   try {
-    const response = await fetch(`${MT5_BRIDGE_URL}${path}`, init);
+    const response = await fetch(`${bridge}${path}`, init);
     const data = await response.json().catch(() => null);
     return { ok: response.ok, status: response.status, data };
   } catch {

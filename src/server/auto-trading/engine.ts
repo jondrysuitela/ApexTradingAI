@@ -1,6 +1,6 @@
-import { env } from "@/server/env";
 import { AppError } from "@/server/errors";
 import { analyzeMarket } from "@/server/market-data/analysis";
+import { getActiveBridgeUrl } from "@/server/market-data/bridges";
 import { getCandles, getTicker } from "@/server/market-data/service";
 import { getSpreadContext } from "@/server/market-data/symbol-context";
 import type { Timeframe } from "@/lib/timeframes";
@@ -36,9 +36,9 @@ async function executeCycle(): Promise<{ cycled: boolean; message: string }> {
     return { cycled: false, message: "Auto-trade disabled." };
   }
 
-  const bridge = env.MT5_BRIDGE_URL ?? "";
+  const bridge = getActiveBridgeUrl() ?? "";
   if (!bridge) {
-    markError(state, "MT5_BRIDGE_URL belum dikonfigurasi.");
+    markError(state, "Bridge MT5 belum dikonfigurasi.");
     void flushPendingAutoTradeState();
     return { cycled: false, message: "Bridge tidak dikonfigurasi." };
   }
@@ -407,7 +407,7 @@ export async function forceCloseAutoTrade(): Promise<{ closed: boolean; message:
     return { closed: false, message: "Tidak ada posisi auto-trade untuk ditutup." };
   }
   const position = state.position;
-  const bridge = env.MT5_BRIDGE_URL ?? "";
+  const bridge = getActiveBridgeUrl() ?? "";
   if (position.mode === "paper") {
     let price: number;
     try {

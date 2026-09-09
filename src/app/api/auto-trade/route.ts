@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkApiToken } from "@/server/api-token";
-import { env } from "@/server/env";
+import { getActiveBridgeUrl } from "@/server/market-data/bridges";
 import { forceCloseAutoTrade, runAutoTradeCycle } from "@/server/auto-trading/engine";
 import { ensureAutoTradeLoop, getAutoTradeLoopHealth, startAutoTradeScheduler, stopAutoTradeScheduler } from "@/server/auto-trading/loop";
 import { flushPendingAutoTradeState, loadAutoTradeState, saveAutoTradeState, syncAutoTradeStateFromDb } from "@/server/auto-trading/state";
@@ -96,7 +96,7 @@ function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<strin
 }
 
 async function fetchBridgeAccountInfo() {
-  const bridge = env.MT5_BRIDGE_URL;
+  const bridge = getActiveBridgeUrl();
   if (!bridge) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6000);
