@@ -250,7 +250,7 @@ export function AiTradingWorkspace() {
           <div className="grid gap-5">
             <div className="grid gap-5 xl:sticky xl:top-2 xl:z-20 xl:rounded-2xl xl:border xl:border-white/10 xl:bg-[#0c1226] xl:p-4 xl:shadow-lg xl:shadow-black/20">
               <AiAlertTicker alert={summaryQuery.data?.alert ?? null} symbol={symbol} timeframe={timeframe} />
-              <AutoTradeCard symbol={symbol} timeframe={timeframe} />
+              <AutoTradeCard symbol={symbol} timeframe={timeframe} symbols={marketOptions.map((item) => item.resolvedSymbol)} />
               <ScalpingReadCard symbol={symbol} timeframe={timeframe} />
               <OrderFlowReadCard symbol={symbol} timeframe={timeframe} />
               <NewsCalendarCard symbol={symbol} timeframe={timeframe} />

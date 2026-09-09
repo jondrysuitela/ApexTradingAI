@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import { Card } from "@/components/ui/card";
 import { appTokenHeaders } from "@/lib/app-token";
@@ -48,7 +48,7 @@ type AutoTradeStatus = {
   loop: { running: boolean; lastTickAt: number | null };
 };
 
-export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTimeframe }: { symbol: string; timeframe: string }) {
+export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTimeframe, symbols: brokerSymbols }: { symbol: string; timeframe: string; symbols: string[] }) {
   const { data, mutate, isLoading } = useSWR<AutoTradeStatus>("/api/auto-trade", fetcher, { refreshInterval: 10000 });
   const [busy, setBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -61,10 +61,17 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
   const configTimeframe = data?.config?.timeframe ?? workspaceTimeframe;
   const symbolMismatch = workspaceSymbol.toUpperCase() !== configSymbol.toUpperCase();
 
-  const symbols = [
-    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT",
-    "USDIDR", "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD", "SPX", "IXIC",
-  ];
+  useEffect(() => {
+    if (!data?.config || !workspaceSymbol || busy) return;
+    if (data.position) return;
+    if (configSymbol.toUpperCase() === workspaceSymbol.toUpperCase()) return;
+    if (!data.enabled) {
+      void post({ action: "config", symbol: workspaceSymbol });
+    }
+  }, [workspaceSymbol, configSymbol, data?.position, data?.enabled]);
+
+  const symbols = brokerSymbols.length > 0 ? brokerSymbols : ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "USDIDR", "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD", "SPX", "IXIC"];
+  const symbolOptions = symbols.some((item) => item.toUpperCase() === configSymbol.toUpperCase()) ? symbols : [...symbols, configSymbol];
   const timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"];
   const slSizes = [0.5, 0.75, 1, 1.5, 2, 3];
   const targets = [2, 3, 5, 8, 12];
@@ -165,7 +172,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
             disabled={busy}
             className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
           >
-            {symbols.map((item) => (
+            {symbolOptions.map((item) => (
               <option key={item} value={item} className="bg-slate-950">{item}</option>
             ))}
           </select>
