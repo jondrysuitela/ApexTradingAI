@@ -15,7 +15,7 @@ type AutoTradeStatus = {
   enabled: boolean;
   status: string;
   config: {
-    mode: "paper" | "demo" | "real";
+    mode: "demo" | "real";
     tradeMode: "single" | "multi";
     symbol: string;
     timeframe: string;
@@ -24,6 +24,8 @@ type AutoTradeStatus = {
     fixedLot: number;
     slAtrMultiplier: number;
     tpRiskReward: number;
+    targetProfitUsd: number;
+    maxLossUsd: number;
     minConfluenceScore: number;
     minScalpingConfidence: number;
     maxOpenPositions: number;
@@ -161,12 +163,11 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Mode</div>
           <select
-            value={data?.config?.mode ?? "paper"}
+            value={data?.config?.mode ?? "demo"}
             onChange={(event) => post({ action: "config", mode: event.target.value })}
             disabled={busy}
             className="w-full bg-transparent font-mono text-xs text-cyan-100 outline-none disabled:opacity-50"
           >
-            <option value="paper" className="bg-slate-950">Paper (virtual)</option>
             <option value="demo" className="bg-slate-950">Akun Demo</option>
             <option value="real" className="bg-slate-950">Real (uang asli)</option>
           </select>
@@ -237,6 +238,30 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
           </select>
         </div>
         <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Max Profit</div>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={data?.config?.targetProfitUsd ?? 0}
+            onChange={(event) => post({ action: "config", targetProfitUsd: Number(event.target.value) })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-emerald-200 outline-none disabled:opacity-50"
+          />
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Max Loss</div>
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={data?.config?.maxLossUsd ?? 0}
+            onChange={(event) => post({ action: "config", maxLossUsd: Number(event.target.value) })}
+            disabled={busy}
+            className="w-full bg-transparent font-mono text-xs text-red-200 outline-none disabled:opacity-50"
+          />
+        </div>
+        <div className="rounded-lg border border-white/10 bg-slate-950/40 px-2.5 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">SL size</div>
           <select
             value={data?.config?.slAtrMultiplier ?? 0.75}
@@ -272,10 +297,10 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         >
           Terminal MT5: <span className="font-mono text-cyan-200">{data.account.accountType.toUpperCase()}</span>{" "}
           <span className="font-mono">{data.account.login ?? "?"}@{data.account.server ?? "?"}</span>
-          {data.accountConflict ? " — TIDAK SESUAI dengan mode dipilih, entry dibatalkan otomatis." : ` — sesuai mode ${(data?.config?.mode ?? "paper").toUpperCase()}.`}
+          {data.accountConflict ? " — TIDAK SESUAI dengan mode dipilih, entry dibatalkan otomatis." : ` — sesuai mode ${(data?.config?.mode ?? "demo").toUpperCase()}.`}
         </div>
       ) : (
-        <div className="mt-2 rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-600">Terminal MT5 tidak terdeteksi — hanya mode paper berjalan.</div>
+        <div className="mt-2 rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-600">Terminal MT5 tidak terdeteksi — status akun & eksekusi tidak aktif.</div>
       )}
 
       {multi && openPositions.length > 0 ? (
@@ -305,7 +330,7 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
           <Stat label="Trades" value={String(stats.trades)} />
           <Stat label="Win Rate" value={`${stats.winRate.toFixed(0)}%`} />
           <Stat label="Realized PnL" value={`$${stats.realizedPnl.toFixed(2)}`} accent />
-          <Stat label={(data?.config?.mode === "paper" ? "Paper Equity" : `${(data?.config?.mode ?? "paper").toUpperCase()} Equity`)} value={`$${stats.equity.toFixed(2)}`} />
+          <Stat label={`${(data?.config?.mode ?? "demo").toUpperCase()} Equity`} value={`$${stats.equity.toFixed(2)}`} />
         </div>
       ) : null}
 
@@ -341,7 +366,10 @@ export function AutoTradeCard({ symbol: workspaceSymbol, timeframe: workspaceTim
         {!data?.logs?.length ? <div className="text-slate-600">Belum ada log. {isLoading ? "Menyambung..." : "Loop: " + (data?.loop?.running ? "aktif" : "mati")}</div> : null}
       </div>
       <div className="mt-2 text-[11px] text-slate-600">
-        Loop interval {(data?.config?.loopIntervalMs ?? 15000) / 1000}s · SL dari ATR × {(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} · TP {(data?.config?.tpRiskReward ?? 5).toFixed(0)}× risiko · trade {(data?.config?.tradeMode ?? "single").toUpperCase()} · max {data?.config?.maxOpenPositions ?? 1} posisi.
+        Loop interval {(data?.config?.loopIntervalMs ?? 15000) / 1000}s · SL dari ATR × {(data?.config?.slAtrMultiplier ?? 0.75).toFixed(2)} · TP {(data?.config?.tpRiskReward ?? 5).toFixed(0)}× risiko · trade {(data?.config?.tradeMode ?? "single").toUpperCase()} · max {data?.config?.maxOpenPositions ?? 1} posisi
+        {(data?.config?.targetProfitUsd ?? 0) > 0 || (data?.config?.maxLossUsd ?? 0) > 0
+          ? ` · scalping tipis: profit cap $${(data?.config?.targetProfitUsd ?? 0).toFixed(2)} / loss cap $${(data?.config?.maxLossUsd ?? 0).toFixed(2)}`
+          : ` · scalping tipis: OFF (pakai TP/SL broker)`}.
       </div>
     </Card>
   );

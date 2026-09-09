@@ -172,57 +172,7 @@ export const journalEntries = pgTable("journal_entries", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const paperOrderTypeEnum = pgEnum("paper_order_type", ["market", "limit", "stop"]);
-export const paperOrderSideEnum = pgEnum("paper_order_side", ["buy", "sell"]);
-export const paperOrderStatusEnum = pgEnum("paper_order_status", ["open", "filled", "cancelled", "rejected"]);
 
-export const paperAccounts = pgTable("paper_accounts", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  baseCurrency: text("base_currency").notNull().default("USD"),
-  balance: numeric("balance", { precision: 24, scale: 10 }).notNull().default("100000"),
-  equity: numeric("equity", { precision: 24, scale: 10 }).notNull().default("100000"),
-  realizedPnl: numeric("realized_pnl", { precision: 24, scale: 10 }).notNull().default("0"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const paperOrders = pgTable("paper_orders", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  accountId: uuid("account_id").notNull().references(() => paperAccounts.id, { onDelete: "cascade" }),
-  symbol: text("symbol").notNull(),
-  side: paperOrderSideEnum("side").notNull(),
-  orderType: paperOrderTypeEnum("order_type").notNull(),
-  quantity: numeric("quantity", { precision: 28, scale: 10 }).notNull(),
-  limitPrice: numeric("limit_price", { precision: 24, scale: 10 }),
-  stopPrice: numeric("stop_price", { precision: 24, scale: 10 }),
-  status: paperOrderStatusEnum("status").notNull().default("open"),
-  filledPrice: numeric("filled_price", { precision: 24, scale: 10 }),
-  realizedPnl: numeric("realized_pnl", { precision: 24, scale: 10 }),
-  filledAt: timestamp("filled_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const paperPositions = pgTable(
-  "paper_positions",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    accountId: uuid("account_id").notNull().references(() => paperAccounts.id, { onDelete: "cascade" }),
-    symbol: text("symbol").notNull(),
-    quantity: numeric("quantity", { precision: 28, scale: 10 }).notNull().default("0"),
-    averagePrice: numeric("average_price", { precision: 24, scale: 10 }).notNull().default("0"),
-    markPrice: numeric("mark_price", { precision: 24, scale: 10 }),
-    unrealizedPnl: numeric("unrealized_pnl", { precision: 24, scale: 10 }).notNull().default("0"),
-    markedAt: timestamp("marked_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => ({
-    accountSymbolUnique: uniqueIndex("paper_positions_account_symbol_idx").on(table.accountId, table.symbol),
-  }),
-);
 
 export const systemEvents = pgTable("system_events", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -59,7 +59,7 @@ function DashboardSurface() {
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
           <div className="text-sm uppercase tracking-[0.3em] text-slate-400">Workspace Status</div>
           <div className="mt-3 text-lg font-semibold">Analysis-first mode</div>
-          <div className="mt-2 text-sm text-slate-300">Markets, backtest, paper trading, and other tools are available only if you decide to bring them back.</div>
+          <div className="mt-2 text-sm text-slate-300">Markets, backtest, and other tools are available only if you decide to bring them back.</div>
         </div>
       </section>
     </div>

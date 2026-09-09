@@ -20,7 +20,7 @@ export function evaluateEntry(input: {
   return { allowed: true, reason: "Scalping + confluence searah.", direction: scalping.direction as "LONG" | "SHORT" };
 }
 
-export function evaluatePaperExit(position: { action: "BUY" | "SELL"; stopLoss: number; takeProfit: number }, price: number): "TP" | "SL" | null {
+export function evaluateExit(position: { action: "BUY" | "SELL"; stopLoss: number; takeProfit: number }, price: number): "TP" | "SL" | null {
   if (position.action === "BUY") {
     if (price >= position.takeProfit) return "TP";
     if (price <= position.stopLoss) return "SL";
@@ -28,5 +28,21 @@ export function evaluatePaperExit(position: { action: "BUY" | "SELL"; stopLoss: 
   }
   if (price <= position.takeProfit) return "TP";
   if (price >= position.stopLoss) return "SL";
+  return null;
+}
+
+export type MoneyExit = {
+  reason: "TP" | "SL";
+  target: number;
+  unrealized: number;
+};
+
+export function evaluateMoneyExit(unrealized: number, targetProfitUsd: number, maxLossUsd: number): MoneyExit | null {
+  if (targetProfitUsd > 0 && unrealized >= targetProfitUsd) {
+    return { reason: "TP", target: targetProfitUsd, unrealized };
+  }
+  if (maxLossUsd > 0 && unrealized <= -maxLossUsd) {
+    return { reason: "SL", target: maxLossUsd, unrealized };
+  }
   return null;
 }

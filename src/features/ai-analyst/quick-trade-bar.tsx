@@ -10,8 +10,6 @@ const fetcher = async (url: string) => {
   return response.json();
 };
 
-type TradeMode = "paper" | "live";
-
 type LiveConfig = {
   configured: boolean;
   status: string;
@@ -46,7 +44,6 @@ type LiveOrderResult = {
 };
 
 export function QuickTradeBar({ symbol, timeframe }: { symbol: string; timeframe: string }) {
-  const [mode, setMode] = useState<TradeMode>("paper");
   const [quantity, setQuantity] = useState("0.01");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
@@ -54,9 +51,7 @@ export function QuickTradeBar({ symbol, timeframe }: { symbol: string; timeframe
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<null | { side: "buy" | "sell"; volume: number }>(null);
 
-  const paperQuery = useSWR<{ snapshot: PaperSnapshot | null }>("/api/paper-trading", fetcher, { refreshInterval: 15000 });
   const liveQuery = useSWR<LiveConfig>(`/api/market-data/order?symbol=${encodeURIComponent(symbol)}`, fetcher, { refreshInterval: 10000 });
-  const snapshot = paperQuery.data?.snapshot ?? null;
   const live = liveQuery.data;
 
   const liveSymbol = live?.symbol;
@@ -73,14 +68,10 @@ export function QuickTradeBar({ symbol, timeframe }: { symbol: string; timeframe
   }
 
   function selectSide(side: "buy" | "sell") {
-    if (busy || !quantity || mode === "live" && !live?.account?.tradeAllowed) return;
+    if (busy || !quantity || !live?.account?.tradeAllowed) return;
     const volume = normalizeVolume(quantity);
     setQuantity(String(volume));
-    if (mode === "live") {
-      setPending({ side, volume });
-    } else {
-      void placePaperOrder(side);
-    }
+    setPending({ side, volume });
   }
 
   async function confirmLiveOrder() {
@@ -115,74 +106,24 @@ export function QuickTradeBar({ symbol, timeframe }: { symbol: string; timeframe
     }
   }
 
-  async function placePaperOrder(side: "buy" | "sell") {
-    if (busy) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const response = await fetch("/api/paper-trading", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ symbol, side, orderType: "market", quantity }),
-      });
-      const body = (await response.json().catch(() => null)) as { order?: { id?: string; status?: string }; error?: string; account?: unknown } | null;
-
-      if (response.ok && body?.order) {
-        setMessage({ type: "ok", text: `Paper order ${side.toUpperCase()} ${quantity} ${symbol} dibuka (${body.order.status})` });
-        await paperQuery.mutate();
-      } else if (response.ok && body?.account) {
-        setMessage({ type: "ok", text: "Paper account siap." });
-      } else {
-        setMessage({ type: "error", text: body?.error ?? "Pesan order gagal." });
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const liveReady = mode === "live" && live?.status === "ready" && live?.account?.tradeAllowed;
-  const liveOffline = mode === "live" && (!live || live.status !== "ready");
+  const liveOffline = !live || live.status !== "ready";
+  const liveReady = live?.status === "ready" && live?.account?.tradeAllowed;
   const liveStatusText = liveOffline ? statusText(live) : null;
 
   return (
     <div className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-2 text-xs">
-          <button
-            onClick={() => setMode("paper")}
-            className={`rounded-lg border px-3 py-1.5 transition ${mode === "paper" ? "border-cyan-400 bg-cyan-400/10 text-cyan-100" : "border-white/10 text-slate-400 hover:text-slate-200"}`}
-          >
-            Paper (simulasi)
-          </button>
-          <button
-            onClick={() => setMode("live")}
-            className={`rounded-lg border px-3 py-1.5 transition ${mode === "live" ? "border-red-400 bg-red-400/10 text-red-100" : "border-white/10 text-slate-400 hover:text-slate-200"}`}
-          >
-            Real MT5
-          </button>
+        <div className="text-xs font-semibold uppercase tracking-[0.25em] text-red-400">Real MT5 Trading</div>
+        <div className="text-xs text-slate-400">
+          {liveOffline ? (
+            <span className="text-yellow-200/80">{liveStatusText}</span>
+          ) : live?.account ? (
+            <span>
+              Akun {live.account.name} ({live.account.login}@{live.account.server}) — {live.account.currency} Balance {fmt(live.account.balance)} | Equity {fmt(live.account.equity)} |
+              Free {fmt(live.account.marginFree)} {live.account.tradeAllowed ? "" : "| TRADING DILARANG"}
+            </span>
+          ) : null}
         </div>
-        {mode === "live" ? (
-          <div className="text-xs text-slate-400">
-            {liveOffline ? (
-              <span className="text-yellow-200/80">{liveStatusText}</span>
-            ) : live?.account ? (
-              <span>
-                Akun {live.account.name} ({live.account.login}@{live.account.server}) — {live.account.currency} Balance {fmt(live.account.balance)} | Equity {fmt(live.account.equity)} |
-                Free {fmt(live.account.marginFree)} {live.account.tradeAllowed ? "" : "| TRADING DILARANG"}
-              </span>
-            ) : null}
-          </div>
-        ) : (
-          <div className="text-xs text-slate-400">
-            {snapshot ? (
-              <span>
-                Balance {snapshot.account.balance} | Equity {snapshot.account.equity} | P/L {snapshot.account.realizedPnl}
-              </span>
-            ) : (
-              <span className="text-yellow-200/80">Paper trading NOT CONNECTED (auth/database belum dikonfigurasi)</span>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -195,45 +136,41 @@ export function QuickTradeBar({ symbol, timeframe }: { symbol: string; timeframe
             className="w-28 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm outline-none"
           />
         </label>
-        {mode === "live" ? (
-          <>
-            <label className="grid gap-1 text-xs">
-              <span className="uppercase tracking-[0.25em] text-slate-500">Stop Loss</span>
-              <input
-                value={stopLoss}
-                onChange={(event) => setStopLoss(event.target.value)}
-                placeholder="opsional"
-                inputMode="decimal"
-                className="w-28 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm outline-none"
-              />
-            </label>
-            <label className="grid gap-1 text-xs">
-              <span className="uppercase tracking-[0.25em] text-slate-500">Take Profit</span>
-              <input
-                value={takeProfit}
-                onChange={(event) => setTakeProfit(event.target.value)}
-                placeholder="opsional"
-                inputMode="decimal"
-                className="w-28 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm outline-none"
-              />
-            </label>
-          </>
-        ) : null}
+        <label className="grid gap-1 text-xs">
+          <span className="uppercase tracking-[0.25em] text-slate-500">Stop Loss</span>
+          <input
+            value={stopLoss}
+            onChange={(event) => setStopLoss(event.target.value)}
+            placeholder="opsional"
+            inputMode="decimal"
+            className="w-28 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm outline-none"
+          />
+        </label>
+        <label className="grid gap-1 text-xs">
+          <span className="uppercase tracking-[0.25em] text-slate-500">Take Profit</span>
+          <input
+            value={takeProfit}
+            onChange={(event) => setTakeProfit(event.target.value)}
+            placeholder="opsional"
+            inputMode="decimal"
+            className="w-28 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-sm outline-none"
+          />
+        </label>
         <button
           onClick={() => selectSide("buy")}
-          disabled={busy || (mode === "live" && !liveReady)}
+          disabled={busy || !liveReady}
           className="flex-1 rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-5 py-3 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-50 sm:flex-none"
         >
-          {mode === "live" ? "ORDER REAL BUY" : "BUY"} {symbol}
+          ORDER REAL BUY {symbol}
         </button>
         <button
           onClick={() => selectSide("sell")}
-          disabled={busy || (mode === "live" && !liveReady)}
+          disabled={busy || !liveReady}
           className="flex-1 rounded-xl border border-red-400/40 bg-red-500/20 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/30 disabled:opacity-50 sm:flex-none"
         >
-          {mode === "live" ? "ORDER REAL SELL" : "SELL"} {symbol}
+          ORDER REAL SELL {symbol}
         </button>
-        {mode === "live" && liveSymbol ? (
+        {liveSymbol ? (
           <div className="text-xs text-slate-500">Lot {liveSymbol.resolvedSymbol}: min {liveSymbol.volumeMin} / max {liveSymbol.volumeMax} / step {liveSymbol.volumeStep}</div>
         ) : null}
       </div>
@@ -264,7 +201,7 @@ export function QuickTradeBar({ symbol, timeframe }: { symbol: string; timeframe
           {message.text}
         </div>
       ) : null}
-      {mode === "live" ? <div className="text-xs text-slate-500">Mode real memakai bridge MT5 (mt5.order_send). Selalu cek terminal MT5 untuk konfirmasi order. Gunakan akun demo dulu sebelum akun real.</div> : null}
+      <div className="text-xs text-slate-500">Mode real memakai bridge MT5 (mt5.order_send). Selalu cek terminal MT5 untuk konfirmasi order. Gunakan akun demo dulu sebelum akun real.</div>
     </div>
   );
 }
@@ -316,11 +253,3 @@ function statusText(live: LiveConfig | undefined) {
   }
   return `MT5 trading belum siap (${live.status}). Detail akun: ${accountError}${symbolError ? ` | ${symbolError}` : ""}`;
 }
-
-type PaperSnapshot = {
-  account: { name: string; balance: string; equity: string; realizedPnl: string };
-  orders: Array<{ id: string; symbol: string; side: string; orderType: string; quantity: string; status: string; filledPrice?: string | null }>;
-  positions: Array<{ id: string; symbol: string; quantity: string; averagePrice: string; markPrice?: string | null; unrealizedPnl: string; markedAt?: string | null }>;
-  history: Array<{ id: string; symbol: string; side: string; orderType: string; quantity: string; filledPrice: string | null; realizedPnl: string | null; filledAt: string | null }>;
-  summary: { balance: string; equity: string; realizedPnl: string; trades: number; wins: number; winRate: string; grossVolume: string; lastTradeAt: string | null };
-};

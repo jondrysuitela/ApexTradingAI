@@ -1,4 +1,4 @@
-export type AutoTradeMode = "paper" | "demo" | "real";
+export type AutoTradeMode = "demo" | "real";
 export type AutoTradeAction = "BUY" | "SELL";
 export type AutoTradeDirection = "AUTO" | "BUY" | "SELL";
 export type AutoTradeTradeMode = "single" | "multi";
@@ -14,6 +14,8 @@ export type AutoTradeConfig = {
   fixedLot: number;
   slAtrMultiplier: number;
   tpRiskReward: number;
+  targetProfitUsd: number;
+  maxLossUsd: number;
   maxOpenPositions: number;
   minConfluenceScore: number;
   minScalpingConfidence: number;
@@ -67,13 +69,6 @@ export type AutoTradeState = {
   config: AutoTradeConfig;
   position: AutoTradePosition | null;
   positions: AutoTradePosition[];
-  paper: {
-    balance: number;
-    equity: number;
-    realizedPnl: number;
-    trades: number;
-    wins: number;
-  };
   lastCycle: { at: string; message: string } | null;
   lastError: string | null;
   lastSkipReason?: string;
@@ -82,7 +77,7 @@ export type AutoTradeState = {
 };
 
 export const AUTO_TRADE_DEFAULTS: AutoTradeConfig = {
-  mode: "paper",
+  mode: "demo",
   tradeMode: "single",
   symbol: "XAUUSD",
   timeframe: "5m",
@@ -91,6 +86,8 @@ export const AUTO_TRADE_DEFAULTS: AutoTradeConfig = {
   fixedLot: 0.01,
   slAtrMultiplier: 0.75,
   tpRiskReward: 5,
+  targetProfitUsd: 0,
+  maxLossUsd: 0,
   maxOpenPositions: 1,
   minConfluenceScore: 40,
   minScalpingConfidence: 40,

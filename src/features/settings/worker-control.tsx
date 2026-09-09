@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/card";
 
 type WorkerResult = {
   alerts: { processed: number; triggered: number };
-  paperTrading: { processed: number; filled: number; marked: number };
 };
 
 export function WorkerControl() {
@@ -39,7 +38,6 @@ export function WorkerControl() {
       <div className="mt-4 grid gap-2 text-sm text-slate-300">
         <p>Status: {status}</p>
         <p>Alerts: {result ? `${result.alerts.processed} processed, ${result.alerts.triggered} triggered` : "NOT RUN"}</p>
-        <p>Paper trading: {result ? `${result.paperTrading.processed} processed, ${result.paperTrading.filled} filled, ${result.paperTrading.marked} marked` : "NOT RUN"}</p>
       </div>
     </Card>
   );

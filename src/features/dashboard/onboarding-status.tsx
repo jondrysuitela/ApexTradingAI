@@ -12,7 +12,7 @@ const fetcher = async (url: string) => {
 type BootstrapStatus = {
   connected: boolean;
   complete: boolean;
-  checks: null | { profile: boolean; portfolio: boolean; paperAccount: boolean; watchlist: boolean };
+  checks: null | { profile: boolean; portfolio: boolean; watchlist: boolean };
 };
 
 export function OnboardingStatus() {
@@ -27,7 +27,6 @@ export function OnboardingStatus() {
         <ReadinessRow label="Database/User Session" ready={Boolean(status?.connected)} />
         <ReadinessRow label="Profile" ready={Boolean(status?.checks?.profile)} />
         <ReadinessRow label="Portfolio" ready={Boolean(status?.checks?.portfolio)} />
-        <ReadinessRow label="Paper Account" ready={Boolean(status?.checks?.paperAccount)} />
         <ReadinessRow label="Watchlist" ready={Boolean(status?.checks?.watchlist)} />
       </div>
     </Card>

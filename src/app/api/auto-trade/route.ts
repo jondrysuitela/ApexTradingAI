@@ -72,7 +72,7 @@ export async function POST(request: Request) {
 
 function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
-  if (typeof body.mode === "string" && (body.mode === "paper" || body.mode === "demo" || body.mode === "real")) patch.mode = body.mode;
+  if (typeof body.mode === "string" && (body.mode === "demo" || body.mode === "real")) patch.mode = body.mode;
   if (typeof body.tradeMode === "string" && (body.tradeMode === "single" || body.tradeMode === "multi")) patch.tradeMode = body.tradeMode;
   if (typeof body.direction === "string" && (body.direction === "AUTO" || body.direction === "BUY" || body.direction === "SELL")) patch.direction = body.direction;
   if (typeof body.symbol === "string" && /^[A-Za-z0-9_.=^-]+$/.test(body.symbol)) patch.symbol = body.symbol.toUpperCase();
@@ -90,6 +90,10 @@ function applyConfigPatch(config: typeof AUTO_TRADE_DEFAULTS, body: Record<strin
   for (const key of numbers) {
     const value = Number(body[key]);
     if (Number.isFinite(value) && value > 0) patch[key] = value;
+  }
+  for (const key of ["targetProfitUsd", "maxLossUsd"] as const) {
+    const value = Number(body[key]);
+    if (Number.isFinite(value) && value >= 0) patch[key] = Math.min(value, 1000);
   }
   if (typeof patch.maxOpenPositions === "number") patch.maxOpenPositions = Math.max(1, Math.round(patch.maxOpenPositions));
   if (body.slSize != null && Number.isFinite(Number(body.slSize)) && Number(body.slSize) > 0) patch.slAtrMultiplier = Number(body.slSize);
@@ -127,9 +131,8 @@ async function buildStatusBody(state = loadAutoTradeState()) {
   const mode = state.config.mode;
   const accountConflict =
     account?.accountType && (mode === "real" ? account.accountType !== "real" : account.accountType === "real");
-  const useLiveEquity = mode === "demo" || mode === "real";
-  const balance = useLiveEquity ? (account?.balance ?? state.paper.balance) : state.paper.balance;
-  const equity = useLiveEquity ? (account?.equity ?? state.paper.equity) : state.paper.equity;
+  const balance = account?.balance ?? 0;
+  const equity = account?.equity ?? 0;
   const closedTrades = state.trades.filter((trade) => trade.mode === mode);
   const closedWins = closedTrades.filter((trade) => trade.realizedPnl > 0).length;
   const closedPnl = closedTrades.reduce((sum, trade) => sum + trade.realizedPnl, 0);
@@ -139,7 +142,6 @@ async function buildStatusBody(state = loadAutoTradeState()) {
     config: state.config,
     position: state.position,
     positions: state.positions,
-    paper: state.paper,
     account,
     accountConflict,
     stats: {

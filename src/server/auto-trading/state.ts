@@ -127,12 +127,16 @@ function loadFromDisk(): AutoTradeState {
 
 function normalizeState(raw: Partial<AutoTradeState>): AutoTradeState {
   const fallback = freshState();
-  const positions = Array.isArray(raw.positions) ? raw.positions : raw.position ? [raw.position] : [];
+  const rawPositions = Array.isArray(raw.positions) ? raw.positions : raw.position ? [raw.position] : [];
+  const config = { ...AUTO_TRADE_DEFAULTS, ...(raw.config ?? {}) };
+  if (config.mode !== "demo" && config.mode !== "real") {
+    config.mode = "demo";
+  }
+  const positions = rawPositions.filter((item) => item.mode === "demo" || item.mode === "real");
   return {
     ...fallback,
     ...raw,
-    config: { ...AUTO_TRADE_DEFAULTS, ...(raw.config ?? {}) },
-    paper: { ...fallback.paper, ...(raw.paper ?? {}) },
+    config,
     position: positions[0] ?? null,
     positions,
     logs: Array.isArray(raw.logs) ? raw.logs : [],
@@ -160,7 +164,6 @@ export function freshState(): AutoTradeState {
     config: { ...AUTO_TRADE_DEFAULTS },
     position: null,
     positions: [],
-    paper: { balance: 10000, equity: 10000, realizedPnl: 0, trades: 0, wins: 0 },
     lastCycle: null,
     lastError: null,
     logs: [],
@@ -175,15 +178,6 @@ export function appendAutoTradeLog(state: AutoTradeState, level: AutoTradeLog["l
 
 export function recordAutoTrade(state: AutoTradeState, trade: AutoTradeClosedTrade) {
   state.trades = [...state.trades, trade].slice(-MAX_TRADES);
-  if (trade.mode === "paper") {
-    state.paper.trades += 1;
-    if (trade.realizedPnl > 0) {
-      state.paper.wins += 1;
-    }
-    state.paper.realizedPnl = roundTo(state.paper.realizedPnl + trade.realizedPnl, 2);
-    state.paper.balance = roundTo(state.paper.balance + trade.realizedPnl, 2);
-    state.paper.equity = roundTo(state.paper.equity + trade.realizedPnl, 2);
-  }
 }
 
 export function setPosition(state: AutoTradeState, position: AutoTradePosition | null) {
